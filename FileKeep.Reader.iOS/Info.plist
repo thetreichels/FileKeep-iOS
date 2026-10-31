@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDisplayName</key>
+	<string>FileKeep Reader</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.filekeep.reader</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
+	<key>UIDeviceFamily</key>
+	<array>
+		<integer>1</integer>
+	</array>
+	<key>UIRequiredDeviceCapabilities</key>
+	<array>
+		<string>arm64</string>
+	</array>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+	</array>
+	<key>NFCReaderUsageDescription</key>
+	<string>FileKeep Reader uses NFC to talk to your YubiKey when unlocking a bundle with a hardware key.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>FileKeep Reader uses Face ID to unlock bundles you have chosen to remember, instead of typing the passphrase every time.</string>
+</dict>
+</plist>

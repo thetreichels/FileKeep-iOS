@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="FileKeep.Reader.iOS.MainPage"
+             Title="FileKeep Reader">
+	<VerticalStackLayout Padding="20" Spacing="12">
+		<Button x:Name="OpenButton" Text="Open bundle" Clicked="OnOpenClicked" />
+		<Label x:Name="StatusLabel" Text="No bundle open." />
+		<CollectionView x:Name="FilesView" SelectionMode="Single"
+		                SelectionChanged="OnFileSelected">
+			<CollectionView.ItemTemplate>
+				<DataTemplate>
+					<VerticalStackLayout Padding="8">
+						<Label Text="{Binding Path}" FontAttributes="Bold" />
+						<Label Text="{Binding Size, StringFormat='{0} bytes'}" />
+					</VerticalStackLayout>
+				</DataTemplate>
+			</CollectionView.ItemTemplate>
+		</CollectionView>
+		<Label x:Name="PreviewLabel" />
+	</VerticalStackLayout>
+</ContentPage>

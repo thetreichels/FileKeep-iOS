@@ -60,8 +60,6 @@ Header JSON (snake_case):
 ```json
 {
   "format": "FileKeep offline bundle v1",
-  "kdf_salt_b64": "...",
-  "kdf_iterations": 600000,
   "wraps": [
     {"type": "passphrase", "salt_b64": "...", "iterations": 600000,
      "nonce_b64": "...", "data_b64": "<DEK wrapped under PBKDF2-HMAC-SHA512 KEK>"},
@@ -79,7 +77,9 @@ Header JSON (snake_case):
 
 - **DEK**: fresh random 256-bit data-encryption key per bundle.
 - File bytes are AES-256-GCM under the DEK (fresh 12-byte nonce per
-  file); ciphertext is appended after the header at the given offset.
+  file); ciphertext is appended after the header. `offset` is the
+  absolute byte offset of the segment from the start of the bundle
+  file; `length` covers ciphertext + 16-byte tag.
   No chunking or dedup inside the bundle — it is a portable artifact,
   not storage.
 - `wraps`: each entry unwraps to the same DEK. Absent `yubikey` entry =

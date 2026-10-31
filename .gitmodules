@@ -1,0 +1,6 @@
+# FileKeep.Core is shared as a git submodule, pinned to a FileKeep release.
+# The iOS app references it directly (single-sourced crypto/envelope);
+# nothing in Core is reimplemented here.
+[submodule "external/FileKeep"]
+	path = external/FileKeep
+	url = https://github.com/thetreichels/FileKeep.git
