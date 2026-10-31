@@ -1,5 +1,7 @@
 # FileKeep Reader (iOS)
+
 [![iOS build](https://github.com/thetreichels/FileKeep-iOS/actions/workflows/ios-build.yml/badge.svg?branch=main)](https://github.com/thetreichels/FileKeep-iOS/actions/workflows/ios-build.yml)
+
 Companion app for [FileKeep](https://github.com/thetreichels/FileKeep):
 opens encrypted stealth-folder bundles on iPhone. Stealth folders only —
 this is a reader, not a backup app.
