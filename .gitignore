@@ -1,0 +1,35 @@
+# .NET / MAUI
+bin/
+obj/
+*.user
+*.suo
+.vs/
+_ReSharper*/
+TestResults/
+
+# MAUI iOS build outputs
+*.ipa
+*.dSYM/
+*.xcarchive/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Xcode (if any native bits are added later)
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+DerivedData/
+
+# JetBrains Rider
+.idea/
+
+# NuGet
+*.nupkg
+*.snupkg
+.nuget/packages/
+
+# Publish profiles
+**/Properties/PublishProfiles/
