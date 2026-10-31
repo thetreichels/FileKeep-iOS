@@ -23,10 +23,10 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Select Xcode 27
+      - name: Select Xcode 26.6
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: '27.0'
+          xcode-version: '26.6'
 
       - name: Set up .NET 10
         uses: actions/setup-dotnet@v4
