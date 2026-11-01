@@ -47,34 +47,50 @@ jobs:
         with:
           xcode-version: '26.6'
 
-      - name: "Repair: force workload manifest refresh"
+      - name: "Clean: remove all MAUI workload state"
         shell: bash
         run: |
           D="${{ steps.toolchain.outputs.chosen }}"
-          echo "=== Uninstalling maui (clears stale state) ==="
-          "$D/dotnet" workload uninstall maui || true
-          echo "=== Updating manifests ==="
-          "$D/dotnet" workload update
-          echo "=== Reinstalling maui with manifests ==="
-          "$D/dotnet" workload install maui
-          echo "=== Verify manifest landed ==="
-          for sdk in $("$D/dotnet" --list-sdks | awk '{print $1}' | grep "^10\."); do
-            echo "--- $sdk ---"
-            ls "$D/sdk-manifests/$sdk/" 2>/dev/null | grep -i maui || echo "(no maui manifest)"
-          done
+          echo "=== Removing workload manifests ==="
+          rm -rf "$D/sdk-manifests" || true
+          echo "=== Removing workload metadata ==="
+          rm -rf "$D/metadata/workloads" || true
+          echo "=== Removing MAUI packs ==="
+          rm -rf "$D/packs/Microsoft.Maui."* || true
+          rm -rf "$D/packs/Microsoft.iOS."* || true
+          rm -rf "$D/packs/Microsoft.MacCatalyst."* || true
+          rm -rf "$D/packs/Microsoft.Android."* || true
+          echo "=== State after clean ==="
+          ls "$D/sdk-manifests/" 2>/dev/null || echo "(no manifests dir)"
+          "$D/dotnet" workload list 2>&1 || true
 
-      - name: "Verify: SDK resolver sees MAUI"
+      - name: "Install: MAUI workload fresh"
         shell: bash
         run: |
           D="${{ steps.toolchain.outputs.chosen }}"
-          mkdir -p /tmp/sdk-probe
-          printf '%s\n' '<Project Sdk="Microsoft.NET.Sdk.Maui">' '  <PropertyGroup>' '    <TargetFramework>net10.0-ios</TargetFramework>' '  </PropertyGroup>' '</Project>' > /tmp/sdk-probe/probe.csproj
-          cd /tmp/sdk-probe
-          if "$D/dotnet" msbuild probe.csproj "-t:_CheckForInvalidConfigurationAndPlatform" -v:q 2>&1 | grep -qi "error MSB4236"; then
-            echo "::error::MSBuild still cannot resolve Microsoft.NET.Sdk.Maui"
+          "$D/dotnet" workload install maui
+          echo "=== Workload list ==="
+          "$D/dotnet" workload list
+
+      - name: "Verify: manifest exists on disk"
+        shell: bash
+        run: |
+          D="${{ steps.toolchain.outputs.chosen }}"
+          FOUND=0
+          for sdk in $("$D/dotnet" --list-sdks | awk '{print $1}' | grep "^10\."); do
+            if [ -d "$D/sdk-manifests/$sdk/microsoft.net.sdk.maui" ]; then
+              echo "FOUND: $D/sdk-manifests/$sdk/microsoft.net.sdk.maui"
+              ls "$D/sdk-manifests/$sdk/microsoft.net.sdk.maui/"
+              FOUND=1
+            fi
+          done
+          if [ "$FOUND" -eq 0 ]; then
+            echo "::error::MAUI workload manifest NOT found on disk after fresh install. SDK resolver will fail."
+            echo "=== All manifests ==="
+            find "$D/sdk-manifests" -maxdepth 2 -type d 2>/dev/null | head -20
             exit 1
           fi
-          echo "OK: resolver sees Microsoft.NET.Sdk.Maui"
+          echo "Manifest verified on disk."
 
       - name: Restore dependencies
         shell: bash
