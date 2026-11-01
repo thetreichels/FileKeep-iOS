@@ -1,0 +1,20 @@
+name: Diagnose pack structure
+
+on: workflow_dispatch
+
+jobs:
+  diag:
+    runs-on: macos-26
+    steps:
+      - name: Check pack SDK structure
+        shell: bash
+        run: |
+          dotnet workload install maui 2>&1 | tail -3
+          echo "=== Pack versions ==="
+          ls /Users/runner/.dotnet/packs/Microsoft.Maui.Sdk/ 2>/dev/null || echo "(none)"
+          echo ""
+          echo "=== Sdks folder ==="
+          find /Users/runner/.dotnet/packs/Microsoft.Maui.Sdk -maxdepth 3 -name "Sdks" -type d 2>/dev/null || echo "(no Sdks dir)"
+          echo ""
+          echo "=== Microsoft.NET.Sdk.Maui ==="
+          find /Users/runner/.dotnet/packs/Microsoft.Maui.Sdk -maxdepth 4 -iname "*Maui*" -type d 2>/dev/null | head -10
