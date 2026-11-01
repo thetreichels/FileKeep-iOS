@@ -47,7 +47,7 @@ jobs:
       - name: Install MAUI workload
         shell: bash
         run: |
-          dotnet workload install maui --ignore-failed-sources
+          dotnet workload install maui --force --ignore-failed-sources
 
       - name: Restore and build
         shell: bash
