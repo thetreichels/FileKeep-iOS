@@ -7,7 +7,7 @@
 		<Button x:Name="OpenButton" Text="Open bundle" Clicked="OnOpenClicked" />
 		<Label x:Name="StatusLabel" Text="No bundle open." />
 		<CollectionView x:Name="FilesView" SelectionMode="Single"
-		                SelectionChanged="OnFileSelected">
+		                SelectionChanged="OnFileSelected" HeightRequest="200">
 			<CollectionView.ItemTemplate>
 				<DataTemplate>
 					<VerticalStackLayout Padding="8">
@@ -17,6 +17,10 @@
 				</DataTemplate>
 			</CollectionView.ItemTemplate>
 		</CollectionView>
-		<Label x:Name="PreviewLabel" />
+		<!-- Slice 2: flexible preview area -->
+		<ContentView x:Name="PreviewContainer" VerticalOptions="FillAndExpand">
+			<Label x:Name="PreviewPlaceholder" Text="Select a file to preview." 
+			       HorizontalOptions="Center" VerticalOptions="Center" />
+		</ContentView>
 	</VerticalStackLayout>
 </ContentPage>
