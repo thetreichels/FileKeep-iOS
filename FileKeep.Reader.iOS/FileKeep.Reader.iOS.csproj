@@ -20,6 +20,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.Maui.Controls" Version="10.0.0" />
     <ProjectReference Include="../external/FileKeep/src/FileKeep.Core/FileKeep.Core.csproj" />
   </ItemGroup>
 
