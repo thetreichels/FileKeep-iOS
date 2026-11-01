@@ -23,6 +23,9 @@ jobs:
           submodules: recursive
           fetch-depth: 0
 
+      - name: Ensure submodules are initialized
+        run: git submodule update --init --recursive
+
       - name: Set up Xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
