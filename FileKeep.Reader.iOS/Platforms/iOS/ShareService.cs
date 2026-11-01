@@ -5,9 +5,8 @@ using UIKit;
 namespace FileKeep.Reader.iOS.Platforms.iOS;
 
 /// <summary>
-/// Explicit export through the iOS share sheet. Memory-only: the NSData is
-/// built from in-memory bytes and nothing is written to disk by us. Export
-/// is the only path by which plaintext leaves the app.
+/// Explicit export through the iOS share sheet.
+/// Export is the only path by which plaintext leaves the app.
 /// </summary>
 public static class ShareService
 {
@@ -17,19 +16,39 @@ public static class ShareService
 		if (presenter?.View is null)
 			return;
 
-		var nsData = NSData.FromArray(data);
-		var item = new ExportItemSource(nsData, fileName, uti);
-		var sheet = new UIActivityViewController(new NSObject[] { item }, null);
-
-		// iPad requires a popover anchor or presenting crashes.
-		if (sheet.PopoverPresentationController is not null)
+		// Write to a temp file with the proper filename so the share
+		// sheet shows the right name and type. This is the explicit
+		// export path — the user chose to share, so a temp file is
+		// acceptable. Deleted immediately after the sheet dismisses.
+		var tempPath = System.IO.Path.Combine(
+			System.IO.Path.GetTempPath(),
+			fileName);
+		
+		try
 		{
-			sheet.PopoverPresentationController.SourceView = presenter.View;
-			var b = presenter.View.Bounds;
-			sheet.PopoverPresentationController.SourceRect = new CGRect(b.Width / 2, b.Height / 2, 0, 0);
-		}
+			System.IO.File.WriteAllBytes(tempPath, data);
+			using var url = NSUrl.FromFilename(tempPath);
+			var sheet = new UIActivityViewController(new NSObject[] { url }, null);
 
-		presenter.PresentViewController(sheet, true, null);
+			// iPad requires a popover anchor or presenting crashes.
+			if (sheet.PopoverPresentationController is not null)
+			{
+				sheet.PopoverPresentationController.SourceView = presenter.View;
+				var b = presenter.View.Bounds;
+				sheet.PopoverPresentationController.SourceRect = new CGRect(b.Width / 2, b.Height / 2, 0, 0);
+			}
+
+			sheet.CompletionWithItemsHandler = (activityType, completed, returnedItems, error) =>
+			{
+				try { System.IO.File.Delete(tempPath); } catch { }
+			};
+
+			presenter.PresentViewController(sheet, true, null);
+		}
+		catch
+		{
+			try { System.IO.File.Delete(tempPath); } catch { }
+		}
 	}
 
 	public static string UtiForExtension(string ext) => ext switch
@@ -42,29 +61,4 @@ public static class ShareService
 		".ppt" => "com.microsoft.powerpoint.ppt",
 		_ => "public.data",
 	};
-
-	private sealed class ExportItemSource : UIActivityItemSource
-	{
-		private readonly NSData _data;
-		private readonly string _fileName;
-		private readonly string _uti;
-
-		public ExportItemSource(NSData data, string fileName, string uti)
-		{
-			_data = data;
-			_fileName = fileName;
-			_uti = uti;
-		}
-
-		public override NSObject PlaceholderItem => _data;
-
-		public override NSObject GetItem(UIActivityViewController activityViewController, NSString activityType)
-			=> _data;
-
-		public override string GetSubjectForActivity(UIActivityViewController activityViewController, NSString activityType)
-			=> _fileName;
-
-		public override string[] GetDataTypeIdentifiersForActivity(UIActivityViewController activityViewController, NSString activityType)
-			=> new[] { _uti };
-	}
 }
