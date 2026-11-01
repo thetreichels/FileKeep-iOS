@@ -26,10 +26,20 @@ jobs:
       - name: Validate submodule
         shell: bash
         run: |
-          git submodule sync --recursive
-          git submodule update --init --recursive --force
-          test -f external/FileKeep/src/FileKeep.Core/FileKeep.Core.csproj
-          git submodule status
+          echo "=== .gitmodules ==="
+          cat .gitmodules || echo "(no .gitmodules)"
+          echo "=== submodule status before ==="
+          git submodule status || true
+          echo "=== sync and update ==="
+          git submodule sync --recursive || true
+          git submodule update --init --recursive --force || echo "UPDATE FAILED"
+          echo "=== submodule status after ==="
+          git submodule status || true
+          echo "=== external dir ==="
+          ls -la external/ || echo "(no external dir)"
+          ls -la external/FileKeep/ 2>/dev/null || echo "(no external/FileKeep)"
+          echo "=== checking for csproj ==="
+          test -f external/FileKeep/src/FileKeep.Core/FileKeep.Core.csproj && echo "FOUND" || echo "MISSING"
 
       - name: Set up .NET 10
         uses: actions/setup-dotnet@v5
