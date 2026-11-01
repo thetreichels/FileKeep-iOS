@@ -1,5 +1,4 @@
 <Project Sdk="Microsoft.NET.Sdk.Maui">
-
   <PropertyGroup>
     <TargetFrameworks>net10.0-ios</TargetFrameworks>
     <SupportedOSPlatformVersion>17.0</SupportedOSPlatformVersion>
@@ -16,8 +15,9 @@
     <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
     <ApplicationVersion>1</ApplicationVersion>
 
-    <CodesignEntitlements>Platforms/iOS/Entitlements.plist</CodesignEntitlements>
-    <CodesignProvision>Automatic</CodesignProvision>
+    <!-- Only keep signing for device builds, not simulator CI -->
+    <CodesignEntitlements Condition="'$(RuntimeIdentifier)' != 'iossimulator-arm64'">Platforms/iOS/Entitlements.plist</CodesignEntitlements>
+    <CodesignProvision Condition="'$(RuntimeIdentifier)' != 'iossimulator-arm64'">Automatic</CodesignProvision>
   </PropertyGroup>
 
   <ItemGroup>
