@@ -55,7 +55,7 @@ jobs:
         shell: bash
         run: |
           dotnet workload uninstall maui || true
-          dotnet workload install maui --ignore-failed-sources
+          dotnet workload install maui --ignore-failed-sources --skip-manifest-update
           dotnet workload list
 
       - name: Restore and build
