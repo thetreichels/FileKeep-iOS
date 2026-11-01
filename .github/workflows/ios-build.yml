@@ -44,6 +44,10 @@ jobs:
         shell: bash
         run: dotnet workload list
 
+      - name: Restore workloads for project
+        shell: bash
+        run: dotnet workload restore FileKeep.Reader.iOS/FileKeep.Reader.iOS.csproj --ignore-failed-sources
+
       - name: Restore dependencies
         run: dotnet restore FileKeep.Reader.iOS/FileKeep.Reader.iOS.csproj
 
