@@ -33,55 +33,13 @@ jobs:
         with:
           dotnet-version: '10.0.403'
 
-      - name: "Discover: selected dotnet"
-        id: toolchain
-        shell: bash
-        run: |
-          echo "dotnet: $(which dotnet)"
-          dotnet --list-sdks | head -5
-          echo "DOTNET_ROOT=${DOTNET_ROOT:-<unset>}"
-          # setup-dotnet sets DOTNET_ROOT and updates PATH; capture the dir
-          CHOSEN="$(dirname "$(which dotnet)")"
-          # which gives .../dotnet, we want the root containing dotnet/
-          if [ -x "$CHOSEN/dotnet" ]; then
-            ROOT="$CHOSEN"
-          else
-            ROOT="$(cd "$CHOSEN/.." && pwd)"
-          fi
-          echo "chosen=$ROOT" >> "$GITHUB_OUTPUT"
-          echo "DOTNET_ROOT=$ROOT" >> "$GITHUB_ENV"
-          echo "Using dotnet root: $ROOT"
-
       - name: "Install: MAUI workload"
         shell: bash
         run: |
           dotnet workload install maui
           dotnet workload list
-
-      - name: "Verify: manifest exists on disk"
-        shell: bash
-        run: |
-          D="${{ steps.toolchain.outputs.chosen }}"
-          echo "Checking under: $D"
-          FOUND=0
-          for sdk in $(dotnet --list-sdks | awk '{print $1}' | grep "^10\."); do
-            if [ -d "$D/sdk-manifests/$sdk/microsoft.net.sdk.maui" ]; then
-              echo "FOUND: $D/sdk-manifests/$sdk/microsoft.net.sdk.maui"
-              FOUND=1
-            fi
-          done
-          # Also check the default location in case DOTNET_ROOT differs
-          for dir in "$D" "$HOME/.dotnet" /usr/local/share/dotnet; do
-            if [ -d "$dir/sdk-manifests" ]; then
-              echo "--- manifests in $dir ---"
-              find "$dir/sdk-manifests" -maxdepth 2 -iname "*maui*" 2>/dev/null | head -5
-            fi
-          done
-          if [ "$FOUND" -eq 0 ]; then
-            echo "::error::MAUI manifest still not found after fresh SDK + workload install"
-            exit 1
-          fi
-          echo "Manifest verified."
+          echo "=== Manifests (feature band) ==="
+          find "$DOTNET_ROOT/sdk-manifests" -maxdepth 2 -iname "*maui*" 2>/dev/null | head -5
 
       - name: Restore dependencies
         run: dotnet restore FileKeep.Reader.iOS/FileKeep.Reader.iOS.csproj
