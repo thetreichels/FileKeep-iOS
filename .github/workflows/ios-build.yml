@@ -28,27 +28,30 @@ jobs:
         with:
           xcode-version: '26.6'
 
-      - name: "Install: MAUI workload"
-        shell: bash
-        run: |
-          dotnet workload install maui
-          dotnet workload list
+      - name: Install .NET 10 SDK
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.403'
 
-      - name: "Fix: link feature-band manifests to SDK version"
+      - name: "Diagnose: workload manifest JSON"
         shell: bash
         run: |
-          D="/Users/runner/.dotnet"
-          for sdk in $(dotnet --list-sdks | awk '{print $1}' | grep "^10\."); do
-            band=$(echo "$sdk" | cut -d. -f1,2).100
-            src="$D/sdk-manifests/$band"
-            dst="$D/sdk-manifests/$sdk"
-            if [ -d "$src" ] && [ ! -e "$dst" ]; then
-              echo "Linking $src -> $dst"
-              ln -s "$src" "$dst"
-            fi
-          done
-          echo "=== Manifests now ==="
-          ls /Users/runner/.dotnet/sdk-manifests/10.0.403/ 2>/dev/null | head -5
+          echo "=== Manifest dir ==="
+          ls /Users/runner/.dotnet/sdk-manifests/10.0.100/ | grep -i maui || echo "(no maui dir)"
+          echo "=== WorkloadManifest.json present? ==="
+          find /Users/runner/.dotnet/sdk-manifests/10.0.100/microsoft.net.sdk.maui -name "WorkloadManifest.json" 2>/dev/null || echo "(no WorkloadManifest.json)"
+          echo "=== Install state ==="
+          cat /Users/runner/.dotnet/metadata/workloads/10.0.100/default.json 2>/dev/null | head -20 || echo "(no install state)"
+
+      - name: "Install: MAUI workload (no skip flags)"
+        shell: bash
+        run: dotnet workload install maui
+
+      - name: "Verify: manifest JSON now present"
+        shell: bash
+        run: |
+          find /Users/runner/.dotnet/sdk-manifests/10.0.100/microsoft.net.sdk.maui -name "WorkloadManifest.json" 2>/dev/null || (echo "::error::WorkloadManifest.json still missing after install" && exit 1)
+          echo "Manifest JSON verified."
 
       - name: Restore dependencies
         run: dotnet restore FileKeep.Reader.iOS/FileKeep.Reader.iOS.csproj
