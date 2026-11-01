@@ -196,13 +196,17 @@ reader honors the same gate (FileKeep already has TOTP verification).
 A code from the key is indistinguishable from a code from an app.
 
 ### 5.6 Read (render)
-Decrypted file bytes stay in memory; render from the byte array:
-images (`UIImage.LoadFromData`), PDF (`PdfKit.PdfDocument` over
-`NSData`), text, audio/video via an `AVAssetResourceLoaderDelegate`
-serving the buffer behind a custom URL scheme. Office documents
-(docx/xlsx/pptx) have no in-memory renderer — they go straight to the
-export path. Only the opened file is ever decrypted; the bundle is
-never fully materialized.
+Decrypted file bytes stay in memory; render from the byte array.
+As built (slice 2, pure MAUI, memory-only): images via MAUI `Image`
+(`ImageSource.FromStream`), PDF and video via `WebView` data URIs,
+audio via `AVAudioPlayer.FromData` with Play/Stop UI, text-or-hex
+fallback for everything else. Office documents (docx/xlsx/pptx) have
+no in-memory renderer — they go straight to the share-sheet export
+path (`UIActivityViewController` over `NSData`, filename + UTI
+supplied). Only the opened file is ever decrypted; the bundle is
+never fully materialized. (The research-stage plan — raw
+`UIImage.LoadFromData`, `PdfKit`, `AVAssetResourceLoaderDelegate` —
+was deliberately simplified to pure MAUI.)
 
 ### 5.7 Lockdown (forensic checklist)
 - On `WillResignActive`: add a blank overlay (kills the app-switcher
