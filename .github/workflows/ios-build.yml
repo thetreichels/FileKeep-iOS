@@ -44,9 +44,17 @@ jobs:
         shell: bash
         run: dotnet workload list
 
-      - name: Restore workloads for project
+      - name: Diagnose MAUI SDK location
         shell: bash
-        run: dotnet workload restore FileKeep.Reader.iOS/FileKeep.Reader.iOS.csproj
+        run: |
+          echo "=== SDK manifests ==="
+          ls /Users/runner/.dotnet/sdk-manifests/10.0.403/ 2>/dev/null || echo "no 10.0.403 manifests"
+          echo "=== MAUI manifest ==="
+          ls /Users/runner/.dotnet/sdk-manifests/10.0.403/microsoft.net.sdk.maui/ 2>/dev/null || echo "no maui manifest"
+          echo "=== Packs ==="
+          ls /Users/runner/.dotnet/packs/ | grep -i maui || echo "no maui packs"
+          echo "=== Sdks in packs ==="
+          find /Users/runner/.dotnet/packs/Microsoft.Maui.Sdk -name "Sdk.props" 2>/dev/null | head -3 || echo "no Sdk.props found"
 
       - name: Restore dependencies
         run: dotnet restore FileKeep.Reader.iOS/FileKeep.Reader.iOS.csproj
