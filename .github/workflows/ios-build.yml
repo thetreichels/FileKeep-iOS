@@ -38,7 +38,7 @@ jobs:
 
       - name: Install MAUI workload
         shell: bash
-        run: dotnet workload install maui --ignore-failed-sources
+        run: dotnet workload install maui
 
       - name: Verify MAUI workload
         shell: bash
@@ -46,7 +46,7 @@ jobs:
 
       - name: Restore workloads for project
         shell: bash
-        run: dotnet workload restore FileKeep.Reader.iOS/FileKeep.Reader.iOS.csproj --ignore-failed-sources
+        run: dotnet workload restore FileKeep.Reader.iOS/FileKeep.Reader.iOS.csproj
 
       - name: Restore dependencies
         run: dotnet restore FileKeep.Reader.iOS/FileKeep.Reader.iOS.csproj
