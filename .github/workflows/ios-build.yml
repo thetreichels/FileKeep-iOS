@@ -15,7 +15,6 @@ jobs:
       DOTNET_CLI_TELEMETRY_OPTOUT: "1"
       DOTNET_NOLOGO: "1"
       DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "1"
-      DOTNET_ROOT: /Users/runner/.dotnet
 
     steps:
       - name: Check out repository
@@ -24,53 +23,86 @@ jobs:
           submodules: recursive
           fetch-depth: 0
 
-      - name: Set up Xcode
+      # ── Phase 1: Discover ──────────────────────────────────────
+      - name: "Discover: dotnet installations"
+        id: discover-dotnet
+        shell: bash
+        run: |
+          echo "=== dotnet on PATH ==="
+          which -a dotnet || echo "no dotnet on PATH"
+          echo ""
+          echo "=== known locations ==="
+          for d in /Users/runner/.dotnet /usr/local/share/dotnet /usr/share/dotnet "$HOME/.dotnet"; do
+            if [ -x "$d/dotnet" ]; then
+              echo "FOUND: $d/dotnet"
+              "$d/dotnet" --list-sdks 2>/dev/null | sed 's/^/  SDK: /'
+            else
+              echo "missing: $d"
+            fi
+          done
+          echo ""
+          echo "=== Xcode ==="
+          ls -d /Applications/Xcode_*.app 2>/dev/null || echo "no Xcode found"
+          xcode-select -p 2>/dev/null || echo "xcode-select not set"
+
+      - name: "Discover: select toolchain"
+        id: toolchain
+        shell: bash
+        run: |
+          # Prefer a dotnet with a .NET 10 SDK; fall back to newest available
+          CHOSEN=""
+          for d in /Users/runner/.dotnet /usr/local/share/dotnet /usr/share/dotnet "$HOME/.dotnet"; do
+            if [ -x "$d/dotnet" ] && "$d/dotnet" --list-sdks 2>/dev/null | grep -q "^10\."; then
+              CHOSEN="$d"
+              break
+            fi
+          done
+          if [ -z "$CHOSEN" ]; then
+            echo "::error::No .NET 10 SDK found in any known location"
+            exit 1
+          fi
+          echo "chosen=$CHOSEN" >> "$GITHUB_OUTPUT"
+          echo "DOTNET_ROOT=$CHOSEN" >> "$GITHUB_ENV"
+          echo "Chosen dotnet: $CHOSEN"
+          "$CHOSEN/dotnet" --info | head -20
+
+      - name: Set up Xcode 26.6
         uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: '26.6'
 
-      - name: Confirm toolchain
+      # ── Phase 2: Ensure MAUI workload ──────────────────────────
+      - name: "Ensure: MAUI workload installed"
         shell: bash
         run: |
-          echo "dotnet: $(which dotnet)"
-          dotnet --info
-          xcode-select -p
+          D="${{ steps.toolchain.outputs.chosen }}"
+          echo "Using dotnet: $D/dotnet"
+          if "$D/dotnet" workload list 2>/dev/null | grep -q "^maui"; then
+            echo "MAUI workload already installed"
+          else
+            echo "Installing MAUI workload..."
+            "$D/dotnet" workload install maui
+          fi
+          "$D/dotnet" workload list
 
-      - name: Install MAUI workload
-        shell: bash
-        run: dotnet workload install maui
-
-      - name: Verify MAUI workload
-        shell: bash
-        run: dotnet workload list
-
-      - name: Diagnose MAUI SDK location
+      - name: "Verify: SDK resolver sees MAUI"
         shell: bash
         run: |
-          echo "=== SDK manifests ==="
-          ls /Users/runner/.dotnet/sdk-manifests/10.0.403/ 2>/dev/null || echo "no 10.0.403 manifests"
-          echo "=== MAUI manifest ==="
-          ls /Users/runner/.dotnet/sdk-manifests/10.0.403/microsoft.net.sdk.maui/ 2>/dev/null || echo "no maui manifest"
-          echo "=== Packs ==="
-          ls /Users/runner/.dotnet/packs/ | grep -i maui || echo "no maui packs"
-          echo "=== Sdks in packs ==="
-          find /Users/runner/.dotnet/packs/Microsoft.Maui.Sdk -name "Sdk.props" 2>/dev/null | head -3 || echo "no Sdk.props found"
-
-      - name: Restore dependencies
-        run: dotnet restore FileKeep.Reader.iOS/FileKeep.Reader.iOS.csproj
-
-      - name: Build iOS simulator app
-        run: >
-          dotnet build FileKeep.Reader.iOS/FileKeep.Reader.iOS.csproj
-          -f net10.0-ios
-          -c Release
-          -p:RuntimeIdentifier=iossimulator-arm64
-          --no-restore
-
-      - name: Upload simulator app
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: FileKeep.Reader-simulator
-          path: FileKeep.Reader.iOS/bin/Release/net10.0-ios/iossimulator-arm64/*.app
-          if-no-files-found: warn
+          D="${{ steps.toolchain.outputs.chosen }}"
+          echo "=== workload manifests for installed SDKs ==="
+          for sdk in $("$D/dotnet" --list-sdks | awk '{print $1}'); do
+            echo "--- $sdk ---"
+            ls "$D/sdk-manifests/$sdk/" 2>/dev/null | grep -i maui || echo "(no maui manifest)"
+          done
+          echo ""
+          echo "=== resolver smoke test ==="
+          mkdir -p /tmp/sdk-probe
+          cat > /tmp/sdk-probe/probe.csproj <<'EOF'
+          <Project Sdk="Microsoft.NET.Sdk.Maui">
+            <PropertyGroup>
+              <TargetFramework>net10.0-ios</TargetFramework>
+            </PropertyGroup>
+          </Project>
+          EOF
+          cd /tmp/sdk-probe
+          if "$D/dotnet" msbuild probe.csproj -t
