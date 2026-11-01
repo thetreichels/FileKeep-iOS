@@ -23,8 +23,13 @@ jobs:
           submodules: recursive
           fetch-depth: 0
 
-      - name: Ensure submodules are initialized
-        run: git submodule update --init --recursive
+      - name: Validate submodule
+        shell: bash
+        run: |
+          git submodule sync --recursive
+          git submodule update --init --recursive --force
+          test -f external/FileKeep/src/FileKeep.Core/FileKeep.Core.csproj
+          git submodule status
 
       - name: Set up .NET 10
         uses: actions/setup-dotnet@v5
