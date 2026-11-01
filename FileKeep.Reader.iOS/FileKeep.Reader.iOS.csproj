@@ -2,6 +2,8 @@
 
   <PropertyGroup>
     <TargetFrameworks>net10.0-ios</TargetFrameworks>
+    <SupportedOSPlatformVersion>17.0</SupportedOSPlatformVersion>
+    <RuntimeIdentifiers>iossimulator-arm64</RuntimeIdentifiers>
     <OutputType>Exe</OutputType>
     <RootNamespace>FileKeep.Reader.iOS</RootNamespace>
     <UseMaui>true</UseMaui>
