@@ -1,0 +1,19 @@
+name: Diagnose manifest
+
+on: workflow_dispatch
+
+jobs:
+  diag:
+    runs-on: macos-26
+    steps:
+      - name: Dump MAUI manifest
+        shell: bash
+        run: |
+          echo "=== WorkloadManifest.json (10.0.110) ==="
+          cat /Users/runner/.dotnet/sdk-manifests/10.0.100/microsoft.net.sdk.maui/10.0.110/WorkloadManifest.json 2>/dev/null | head -100 || echo "(not found)"
+          echo ""
+          echo "=== Packs dir ==="
+          ls /Users/runner/.dotnet/packs/ | grep -i maui || echo "(no maui packs)"
+          echo ""
+          echo "=== Maui Sdk pack contents ==="
+          ls /Users/runner/.dotnet/packs/Microsoft.Maui.Sdk/ 2>/dev/null || echo "(no pack dir)"
