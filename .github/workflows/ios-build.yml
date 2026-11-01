@@ -26,10 +26,13 @@ jobs:
       - name: Validate submodule
         shell: bash
         run: |
-          git submodule sync --recursive || true
-          git submodule update --init --recursive --force || echo "UPDATE FAILED"
+          echo "=== .gitmodules ==="
+          cat .gitmodules || echo "(no .gitmodules)"
+          echo "=== submodule status ==="
           git submodule status || true
-          ls -la external/FileKeep/src/FileKeep.Core/ 2>/dev/null || echo "(core dir missing)"
+          echo "=== external dir ==="
+          ls -la external/ 2>/dev/null || echo "(no external dir)"
+          find external -maxdepth 3 -type d 2>/dev/null || true
 
       - name: Set up .NET 10
         uses: actions/setup-dotnet@v5
@@ -39,18 +42,18 @@ jobs:
       - name: Set up Xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: '16.4'
+          xcode-version: '27.1'
 
       - name: Select Xcode
         shell: bash
         run: |
-          sudo xcode-select -switch /Applications/Xcode_16.4.app/Contents/Developer
+          sudo xcode-select -switch /Applications/Xcode_27.1.app/Contents/Developer
+          sudo xcodebuild -license accept || true
           xcodebuild -version
 
       - name: Reinstall MAUI workload
         shell: bash
         run: |
-          sudo xcodebuild -license accept || true
           dotnet workload uninstall maui || true
           dotnet workload install maui --ignore-failed-sources
           dotnet workload list
