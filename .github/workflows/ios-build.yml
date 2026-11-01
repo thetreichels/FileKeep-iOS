@@ -31,11 +31,13 @@ jobs:
         with:
           xcode-version: '16.4'
 
-      - name: Verify Xcode
+      - name: Select Xcode and validate SDKs
+        shell: bash
         run: |
-          xcodebuild -version
           sudo xcode-select -switch /Applications/Xcode_16.4.app/Contents/Developer
           xcodebuild -version
+          xcodebuild -showsdks
+          dotnet --list-sdks
 
       - name: Install .NET 10 SDK
         uses: actions/setup-dotnet@v5
@@ -43,26 +45,27 @@ jobs:
           dotnet-version: '10.0.100'
 
       - name: Install MAUI workload
+        shell: bash
         run: |
           dotnet workload install maui --ignore-failed-sources
 
-      - name: Restore workloads for the app
-        run: dotnet workload restore FileKeep.Reader.iOS/FileKeep.Reader.iOS.csproj
-
-      - name: Restore dependencies
-        run: dotnet restore FileKeep.Reader.iOS/FileKeep.Reader.iOS.csproj
+      - name: Restore workloads and project
+        shell: bash
+        run: |
+          dotnet workload restore FileKeep.Reader.iOS/FileKeep.Reader.iOS.csproj
+          dotnet restore FileKeep.Reader.iOS/FileKeep.Reader.iOS.csproj
 
       - name: Build iOS simulator app
-        run: >
-          dotnet build FileKeep.Reader.iOS/FileKeep.Reader.iOS.csproj
-          -f net10.0-ios
-          -c Release
-          -p:RuntimeIdentifier=iossimulator-arm64
-          -p:EnableCodeSigning=false
-          -p:CodesignKey=""
-          -p:CodesignProvision=""
-          -p:BuildIpa=false
-          --no-restore
+        shell: bash
+        run: |
+          dotnet build FileKeep.Reader.iOS/FileKeep.Reader.iOS.csproj \
+            -f net10.0-ios \
+            -c Release \
+            -p:RuntimeIdentifier=iossimulator-arm64 \
+            -p:EnableCodeSigning=false \
+            -p:CodesignKey="" \
+            -p:CodesignProvision="" \
+            -p:BuildIpa=false
 
       - name: Upload simulator app
         if: success()
