@@ -28,18 +28,27 @@ jobs:
         with:
           xcode-version: '26.6'
 
-      - name: Install .NET 10 SDK fresh
-        uses: actions/setup-dotnet@v5
-        with:
-          dotnet-version: '10.0.403'
-
       - name: "Install: MAUI workload"
         shell: bash
         run: |
           dotnet workload install maui
           dotnet workload list
-          echo "=== Manifests (feature band) ==="
-          find "$DOTNET_ROOT/sdk-manifests" -maxdepth 2 -iname "*maui*" 2>/dev/null | head -5
+
+      - name: "Fix: link feature-band manifests to SDK version"
+        shell: bash
+        run: |
+          D="/Users/runner/.dotnet"
+          for sdk in $(dotnet --list-sdks | awk '{print $1}' | grep "^10\."); do
+            band=$(echo "$sdk" | cut -d. -f1,2).100
+            src="$D/sdk-manifests/$band"
+            dst="$D/sdk-manifests/$sdk"
+            if [ -d "$src" ] && [ ! -e "$dst" ]; then
+              echo "Linking $src -> $dst"
+              ln -s "$src" "$dst"
+            fi
+          done
+          echo "=== Manifests now ==="
+          ls /Users/runner/.dotnet/sdk-manifests/10.0.403/ 2>/dev/null | head -5
 
       - name: Restore dependencies
         run: dotnet restore FileKeep.Reader.iOS/FileKeep.Reader.iOS.csproj
