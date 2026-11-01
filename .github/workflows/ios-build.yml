@@ -23,84 +23,72 @@ jobs:
           submodules: recursive
           fetch-depth: 0
 
-      - name: "Discover: select toolchain"
-        id: toolchain
-        shell: bash
-        run: |
-          CHOSEN=""
-          for d in /Users/runner/.dotnet /usr/local/share/dotnet /usr/share/dotnet "$HOME/.dotnet"; do
-            if [ -x "$d/dotnet" ] && "$d/dotnet" --list-sdks 2>/dev/null | grep -q "^10\."; then
-              CHOSEN="$d"
-              break
-            fi
-          done
-          if [ -z "$CHOSEN" ]; then
-            echo "::error::No .NET 10 SDK found"
-            exit 1
-          fi
-          echo "chosen=$CHOSEN" >> "$GITHUB_OUTPUT"
-          echo "DOTNET_ROOT=$CHOSEN" >> "$GITHUB_ENV"
-          echo "Chosen dotnet: $CHOSEN"
-
       - name: Set up Xcode 26.6
         uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: '26.6'
 
-      - name: "Clean: remove MAUI workload packs and metadata"
-        shell: bash
-        run: |
-          D="${{ steps.toolchain.outputs.chosen }}"
-          echo "=== Removing MAUI packs ==="
-          rm -rf "$D/packs/Microsoft.Maui."* || true
-          rm -rf "$D/packs/Microsoft.iOS."* || true
-          rm -rf "$D/packs/Microsoft.MacCatalyst."* || true
-          rm -rf "$D/packs/Microsoft.Android."* || true
-          echo "=== Removing workload install records ==="
-          rm -rf "$D/metadata/workloads" || true
-          echo "=== Removing maui manifests (keep advertising manifests) ==="
-          rm -rf "$D/sdk-manifests"/*/microsoft.net.sdk.maui || true
-          rm -rf "$D/sdk-manifests"/*/microsoft.net.sdk.maccatalyst || true
-          rm -rf "$D/sdk-manifests"/*/microsoft.net.sdk.ios || true
-          rm -rf "$D/sdk-manifests"/*/microsoft.net.sdk.android || true
-          echo "Clean done."
+      - name: Install .NET 10 SDK fresh
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.403'
 
-      - name: "Install: MAUI workload fresh"
+      - name: "Discover: selected dotnet"
+        id: toolchain
         shell: bash
         run: |
-          D="${{ steps.toolchain.outputs.chosen }}"
-          "$D/dotnet" workload update
-          "$D/dotnet" workload install maui
-          echo "=== Workload list ==="
-          "$D/dotnet" workload list
+          echo "dotnet: $(which dotnet)"
+          dotnet --list-sdks | head -5
+          echo "DOTNET_ROOT=${DOTNET_ROOT:-<unset>}"
+          # setup-dotnet sets DOTNET_ROOT and updates PATH; capture the dir
+          CHOSEN="$(dirname "$(which dotnet)")"
+          # which gives .../dotnet, we want the root containing dotnet/
+          if [ -x "$CHOSEN/dotnet" ]; then
+            ROOT="$CHOSEN"
+          else
+            ROOT="$(cd "$CHOSEN/.." && pwd)"
+          fi
+          echo "chosen=$ROOT" >> "$GITHUB_OUTPUT"
+          echo "DOTNET_ROOT=$ROOT" >> "$GITHUB_ENV"
+          echo "Using dotnet root: $ROOT"
+
+      - name: "Install: MAUI workload"
+        shell: bash
+        run: |
+          dotnet workload install maui
+          dotnet workload list
 
       - name: "Verify: manifest exists on disk"
         shell: bash
         run: |
           D="${{ steps.toolchain.outputs.chosen }}"
+          echo "Checking under: $D"
           FOUND=0
-          for sdk in $("$D/dotnet" --list-sdks | awk '{print $1}' | grep "^10\."); do
+          for sdk in $(dotnet --list-sdks | awk '{print $1}' | grep "^10\."); do
             if [ -d "$D/sdk-manifests/$sdk/microsoft.net.sdk.maui" ]; then
               echo "FOUND: $D/sdk-manifests/$sdk/microsoft.net.sdk.maui"
-              ls "$D/sdk-manifests/$sdk/microsoft.net.sdk.maui/"
               FOUND=1
             fi
           done
+          # Also check the default location in case DOTNET_ROOT differs
+          for dir in "$D" "$HOME/.dotnet" /usr/local/share/dotnet; do
+            if [ -d "$dir/sdk-manifests" ]; then
+              echo "--- manifests in $dir ---"
+              find "$dir/sdk-manifests" -maxdepth 2 -iname "*maui*" 2>/dev/null | head -5
+            fi
+          done
           if [ "$FOUND" -eq 0 ]; then
-            echo "::error::MAUI workload manifest NOT found on disk after fresh install. SDK resolver will fail."
+            echo "::error::MAUI manifest still not found after fresh SDK + workload install"
             exit 1
           fi
-          echo "Manifest verified on disk."
+          echo "Manifest verified."
 
       - name: Restore dependencies
-        shell: bash
-        run: |
-          "${{ steps.toolchain.outputs.chosen }}/dotnet" restore FileKeep.Reader.iOS/FileKeep.Reader.iOS.csproj
+        run: dotnet restore FileKeep.Reader.iOS/FileKeep.Reader.iOS.csproj
 
       - name: Build iOS simulator app
-        shell: bash
         run: >
-          "${{ steps.toolchain.outputs.chosen }}/dotnet" build FileKeep.Reader.iOS/FileKeep.Reader.iOS.csproj
+          dotnet build FileKeep.Reader.iOS/FileKeep.Reader.iOS.csproj
           -f net10.0-ios
           -c Release
           -p:RuntimeIdentifier=iossimulator-arm64
