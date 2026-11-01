@@ -43,11 +43,57 @@ public sealed class BundleReader : IDisposable
 		ArgumentNullException.ThrowIfNull(bundleBytes);
 		ArgumentException.ThrowIfNullOrEmpty(passphrase);
 
-		BundleHeader header;
+		var (header, wrap, salt, iterations) = GetPassphraseWrap(bundleBytes);
+		byte[] kek = KeyDerivation.DeriveKey(passphrase, salt, iterations);
+		try
 		{
-			var parsed = ParseHeader(bundleBytes);
-			header = parsed.Header;
+			return FinishOpen(bundleBytes, header, wrap, kek);
 		}
+		finally
+		{
+			CryptographicOperations.ZeroMemory(kek);
+		}
+	}
+
+	/// <summary>
+	/// Opens a bundle with the export passphrase as a <c>char[]</c> (the
+	/// native secure prompt's buffer). Derives the identical key as the
+	/// <c>string</c> overload (UTF-8). The passphrase buffer is zeroed
+	/// before return.
+	/// </summary>
+	public static BundleReader OpenWithPassphrase(byte[] bundleBytes, char[] passphrase)
+	{
+		ArgumentNullException.ThrowIfNull(bundleBytes);
+		ArgumentNullException.ThrowIfNull(passphrase);
+		if (passphrase.Length == 0)
+			throw new ArgumentException("Passphrase must not be empty.", nameof(passphrase));
+
+		var (header, wrap, salt, iterations) = GetPassphraseWrap(bundleBytes);
+		byte[] kek;
+		try
+		{
+			kek = Rfc2898DeriveBytes.Pbkdf2(
+				passphrase, salt, iterations, HashAlgorithmName.SHA512, KeyDerivation.KeySizeBytes);
+		}
+		finally
+		{
+			Array.Clear(passphrase);
+		}
+		try
+		{
+			return FinishOpen(bundleBytes, header, wrap, kek);
+		}
+		finally
+		{
+			CryptographicOperations.ZeroMemory(kek);
+		}
+	}
+
+	private static (BundleHeader Header, BundleWrap Wrap, byte[] Salt, int Iterations) GetPassphraseWrap(
+		byte[] bundleBytes)
+	{
+		var parsed = ParseHeader(bundleBytes);
+		var header = parsed.Header;
 		BundleWrap wrap = header.Wraps.FirstOrDefault(w => w.Type == "passphrase")
 			?? throw new InvalidDataException(
 				"This bundle has no passphrase wrap — it may require a YubiKey.");
@@ -56,18 +102,46 @@ public sealed class BundleReader : IDisposable
 			?? throw new InvalidDataException("Passphrase wrap is missing its salt."));
 		int iterations = wrap.Iterations
 			?? throw new InvalidDataException("Passphrase wrap is missing its iteration count.");
-		byte[] kek = KeyDerivation.DeriveKey(passphrase, salt, iterations);
-		try
-		{
-			byte[] dek = UnwrapDek(wrap, kek);
-			var reader = new BundleReader(bundleBytes, header);
-			reader._dek = dek;
-			return reader;
-		}
-		finally
-		{
-			CryptographicOperations.ZeroMemory(kek);
-		}
+		return (header, wrap, salt, iterations);
+	}
+
+	private static BundleReader FinishOpen(
+		byte[] bundleBytes, BundleHeader header, BundleWrap wrap, byte[] kek)
+	{
+		byte[] dek = UnwrapDek(wrap, kek);
+		var reader = new BundleReader(bundleBytes, header);
+		reader._dek = dek;
+		return reader;
+	}
+
+	/// <summary>
+	/// Opens a bundle directly from a DEK (Face ID unlock path — the DEK
+	/// came out of the Keychain). The reader clones the DEK; the caller
+	/// zeroes its own copy.
+	/// </summary>
+	public static BundleReader OpenWithDek(byte[] bundleBytes, byte[] dek)
+	{
+		ArgumentNullException.ThrowIfNull(bundleBytes);
+		ArgumentNullException.ThrowIfNull(dek);
+		if (dek.Length != KeyDerivation.KeySizeBytes)
+			throw new ArgumentException($"DEK must be {KeyDerivation.KeySizeBytes} bytes.", nameof(dek));
+
+		var parsed = ParseHeader(bundleBytes);
+		var reader = new BundleReader(bundleBytes, parsed.Header);
+		reader._dek = (byte[])dek.Clone();
+		return reader;
+	}
+
+	/// <summary>
+	/// Returns a copy of the session DEK (for Keychain enrollment after a
+	/// passphrase unlock). The caller zeroes the copy when done.
+	/// </summary>
+	public byte[] GetDekCopy()
+	{
+		ThrowIfDisposed();
+		if (_dek is null)
+			throw new InvalidOperationException("Bundle is not unlocked.");
+		return (byte[])_dek.Clone();
 	}
 
 	/// <summary>

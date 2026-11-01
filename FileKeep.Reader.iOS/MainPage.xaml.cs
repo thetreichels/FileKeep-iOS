@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using FileKeep.Reader.iOS.Core.Bundle;
+using FileKeep.Reader.iOS.Core.Session;
 #if IOS
 using FileKeep.Reader.iOS.Platforms.iOS;
 #endif
@@ -8,14 +9,13 @@ using FileKeep.Reader.iOS.Platforms.iOS;
 namespace FileKeep.Reader.iOS;
 
 /// <summary>
-/// Slice 1 UI: open a bundle, unlock with the passphrase, list files,
-/// decrypt one file on tap. Slice 2: in-app preview rendering — images,
-/// PDF, audio and video render from memory; Office docs export through
-/// the share sheet; everything else falls back to text-or-hex.
+/// Slice 1 UI: open a bundle, unlock, list files, decrypt one file on tap.
+/// Slice 2: in-app preview rendering. Slice 3: unlock session — Face ID
+/// via the Keychain after the first passphrase unlock, native secure
+/// passphrase entry, 1-hour idle expiry, wipe on background.
 /// </summary>
 public partial class MainPage : ContentPage
 {
-	private BundleReader? _reader;
 #if IOS
 	private AudioPlayer? _audioPlayer;
 #endif
@@ -23,6 +23,8 @@ public partial class MainPage : ContentPage
 	public MainPage()
 	{
 		InitializeComponent();
+		SessionManager.Instance.Locked += (_, _) =>
+			Microsoft.Maui.ApplicationModel.MainThread.BeginInvokeOnMainThread(ResetPreviewUi);
 	}
 
 	private async void OnOpenClicked(object? sender, EventArgs e)
@@ -46,34 +48,54 @@ public partial class MainPage : ContentPage
 		if (bytes is null)
 			return; // user cancelled
 
-		string? passphrase = await DisplayPromptAsync(
-			"Unlock", "Export passphrase:", "Open", "Cancel",
-			maxLength: 256, keyboard: Keyboard.Text, initialValue: "");
-		if (string.IsNullOrEmpty(passphrase))
-			return;
+		// The bundle fingerprint keys the Face ID enrollment: one DEK per
+		// bundle, so each package unlocks independently.
+		string fingerprint = Convert.ToHexString(SHA256.HashData(bytes));
 
 		BundleReader reader;
-		try
+		byte[]? dek = TryFaceIdUnlock(fingerprint);
+		if (dek is not null)
 		{
-			// The passphrase string is MAUI's; zeroing it is not
-			// possible — slice 3 replaces this prompt with a natively
-			// wiped secure entry. The derived keys are zeroed.
-			reader = await Task.Run(() => BundleReader.OpenWithPassphrase(bytes, passphrase));
+			try
+			{
+				reader = BundleReader.OpenWithDek(bytes, dek);
+			}
+			finally
+			{
+				CryptographicOperations.ZeroMemory(dek);
+			}
 		}
-		catch (CryptographicException)
+		else
 		{
-			StatusLabel.Text = "Wrong passphrase.";
-			CryptographicOperations.ZeroMemory(bytes);
-			return;
-		}
-		catch (Exception ex)
-		{
-			StatusLabel.Text = "Couldn't open bundle: " + ex.Message;
-			CryptographicOperations.ZeroMemory(bytes);
-			return;
+			char[]? passphrase = await SecurePrompt.PromptAsync("Unlock bundle", "Export passphrase:");
+			if (passphrase is null || passphrase.Length == 0)
+			{
+				if (passphrase is not null)
+					Array.Clear(passphrase);
+				CryptographicOperations.ZeroMemory(bytes);
+				return; // user cancelled
+			}
+			try
+			{
+				// The char[] overload zeroes the passphrase buffer itself.
+				reader = await Task.Run(() => BundleReader.OpenWithPassphrase(bytes, passphrase));
+			}
+			catch (CryptographicException)
+			{
+				CryptographicOperations.ZeroMemory(bytes);
+				StatusLabel.Text = "Wrong passphrase.";
+				return;
+			}
+			catch (Exception ex)
+			{
+				CryptographicOperations.ZeroMemory(bytes);
+				StatusLabel.Text = "Couldn't open bundle: " + ex.Message;
+				return;
+			}
+			EnrollFaceId(fingerprint, reader);
 		}
 
-		_reader = reader;
+		SessionManager.Instance.Open(reader);
 		FilesView.ItemsSource = reader.Files;
 		StatusLabel.Text = $"{reader.Files.Count} file(s)" +
 			(reader.RequiresTotp ? " — TOTP required (slice 5)" : "") +
@@ -81,13 +103,59 @@ public partial class MainPage : ContentPage
 #endif
 	}
 
-	private void OnFileSelected(object? sender, SelectionChangedEventArgs e)
+#if IOS
+	/// <summary>
+	/// Face ID path: read the enrolled DEK out of the Keychain (iOS prompts
+	/// for Face ID on the read). Returns null when the bundle was never
+	/// enrolled, biometrics are unavailable, or the user cancels — the
+	/// caller then falls back to the passphrase. A stale enrollment
+	/// (biometrics changed since) is dropped so the next open re-enrolls.
+	/// </summary>
+	private static byte[]? TryFaceIdUnlock(string fingerprint)
 	{
-		if (_reader is null || e.CurrentSelection.FirstOrDefault() is not BundleFileEntry entry)
+		if (!BiometricKeychain.CanUseBiometrics() || !BiometricKeychain.IsEnrolled(fingerprint))
+			return null;
+		byte[]? dek = BiometricKeychain.TryReadDek(fingerprint);
+		if (dek is null)
+		{
+			BiometricKeychain.DeleteDek(fingerprint);
+			BiometricKeychain.UnmarkEnrolled(fingerprint);
+		}
+		return dek;
+	}
+
+	/// <summary>
+	/// Stores this bundle's DEK in the Keychain under a biometric access
+	/// control so the next open can use Face ID. Silent no-op when the
+	/// device can't do biometrics (simulator).
+	/// </summary>
+	private static void EnrollFaceId(string fingerprint, BundleReader reader)
+	{
+		if (!BiometricKeychain.CanUseBiometrics())
 			return;
+		byte[] dek = reader.GetDekCopy();
 		try
 		{
-			byte[] plaintext = _reader.OpenFile(entry);
+			if (BiometricKeychain.StoreDek(fingerprint, dek))
+				BiometricKeychain.MarkEnrolled(fingerprint);
+		}
+		finally
+		{
+			CryptographicOperations.ZeroMemory(dek);
+		}
+	}
+#endif
+
+	private void OnFileSelected(object? sender, SelectionChangedEventArgs e)
+	{
+		if (!SessionManager.Instance.IsOpen ||
+			e.CurrentSelection.FirstOrDefault() is not BundleFileEntry entry)
+			return;
+		SessionManager.Instance.Touch();
+		var reader = SessionManager.Instance.Reader;
+		try
+		{
+			byte[] plaintext = reader.OpenFile(entry);
 			try
 			{
 #if IOS
@@ -222,16 +290,20 @@ public partial class MainPage : ContentPage
 		}
 	}
 
-	private void CloseReader()
+	private void ResetPreviewUi()
 	{
-		_reader?.Dispose();
-		_reader = null;
+		FilesView.ItemsSource = null;
 #if IOS
 		_audioPlayer?.Dispose();
 		_audioPlayer = null;
 #endif
-		FilesView.ItemsSource = null;
 		PreviewContainer.Content = new Label { Text = "Select a file to preview.", HorizontalOptions = LayoutOptions.Center, VerticalOptions = LayoutOptions.Center };
 		StatusLabel.Text = "No bundle open.";
+	}
+
+	private void CloseReader()
+	{
+		SessionManager.Instance.Lock();
+		ResetPreviewUi();
 	}
 }
