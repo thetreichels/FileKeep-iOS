@@ -15,16 +15,12 @@
     <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
     <ApplicationVersion>1</ApplicationVersion>
 
-    <!-- Only keep signing for device builds, not simulator CI -->
     <CodesignEntitlements Condition="'$(RuntimeIdentifier)' != 'iossimulator-arm64'">Platforms/iOS/Entitlements.plist</CodesignEntitlements>
     <CodesignProvision Condition="'$(RuntimeIdentifier)' != 'iossimulator-arm64'">Automatic</CodesignProvision>
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- FileKeep.Core: envelope helpers, PBKDF2, AES-GCM, JSON.
-         Single-sourced — never reimplemented here. Provided by the
-         external/FileKeep submodule, pinned to a FileKeep release. -->
-    <ProjectReference Include="../../external/FileKeep/src/FileKeep.Core/FileKeep.Core.csproj" />
+    <ProjectReference Include="../external/FileKeep/src/FileKeep.Core/FileKeep.Core.csproj" />
   </ItemGroup>
 
 </Project>
