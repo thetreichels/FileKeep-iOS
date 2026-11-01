@@ -22,7 +22,7 @@
     <!-- FileKeep.Core: envelope helpers, PBKDF2, AES-GCM, JSON.
          Single-sourced — never reimplemented here. Provided by the
          external/FileKeep submodule, pinned to a FileKeep release. -->
-    <ProjectReference Include="..\..\external\FileKeep\src\FileKeep.Core\FileKeep.Core.csproj" />
+    <ProjectReference Include="../../external/FileKeep/src/FileKeep.Core/FileKeep.Core.csproj" />
   </ItemGroup>
 
 </Project>
