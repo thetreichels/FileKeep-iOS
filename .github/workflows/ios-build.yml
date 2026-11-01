@@ -9,7 +9,7 @@ on:
 
 jobs:
   build:
-    runs-on: macos-15
+    runs-on: macos-14
     timeout-minutes: 60
     env:
       DOTNET_CLI_TELEMETRY_OPTOUT: "1"
@@ -26,38 +26,33 @@ jobs:
       - name: Ensure submodules are initialized
         run: git submodule update --init --recursive
 
-      - name: Set up Xcode
-        uses: maxim-lobanov/setup-xcode@v1
-        with:
-          xcode-version: '16.4'
-
-      - name: Select Xcode and validate SDKs
-        shell: bash
-        run: |
-          sudo xcode-select -switch /Applications/Xcode_16.4.app/Contents/Developer
-          xcodebuild -version
-          xcodebuild -showsdks
-          dotnet --list-sdks
-
-      - name: Install .NET 10 SDK
+      - name: Set up .NET 10
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.100'
+
+      - name: Set up Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '16.3'
+
+      - name: Select Xcode
+        shell: bash
+        run: |
+          sudo xcode-select -switch /Applications/Xcode_16.3.app/Contents/Developer
+          xcodebuild -version
+          xcodebuild -showsdks
 
       - name: Install MAUI workload
         shell: bash
         run: |
           dotnet workload install maui --ignore-failed-sources
 
-      - name: Restore workloads and project
+      - name: Restore and build
         shell: bash
         run: |
           dotnet workload restore FileKeep.Reader.iOS/FileKeep.Reader.iOS.csproj
           dotnet restore FileKeep.Reader.iOS/FileKeep.Reader.iOS.csproj
-
-      - name: Build iOS simulator app
-        shell: bash
-        run: |
           dotnet build FileKeep.Reader.iOS/FileKeep.Reader.iOS.csproj \
             -f net10.0-ios \
             -c Release \
