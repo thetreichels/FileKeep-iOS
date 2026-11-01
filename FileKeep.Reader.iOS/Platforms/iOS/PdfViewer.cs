@@ -1,57 +1,28 @@
-using Foundation;
-using PDFKit;
 using Microsoft.Maui.Controls;
 
 namespace FileKeep.Reader.iOS.Platforms.iOS;
 
 /// <summary>
-/// Renders a PDF from in-memory bytes using PDFKit.
+/// Renders a PDF from in-memory bytes using a WebView with a data URI.
 /// The PDF never touches disk.
 /// </summary>
 public static class PdfViewer
 {
 	public static View Create(byte[] pdfData)
 	{
-		// Create a UIView wrapper for the PDFKit PDFView
-		var wrapper = new PdfViewWrapper(pdfData);
-		return wrapper;
-	}
-
-	private sealed class PdfViewWrapper : View
-	{
-		private readonly byte[] _data;
-
-		public PdfViewWrapper(byte[] data)
+		var base64 = Convert.ToBase64String(pdfData);
+		var webView = new WebView
 		{
-			_data = data;
-		}
-	}
-
-	/// <summary>
-	/// MAUI handler that hosts a native PDFKit PDFView.
-	/// </summary>
-	public static IView CreateNative(byte[] pdfData)
-	{
-		var pdfView = new PdfKit.PDFView
-		{
-			AutoScales = true,
-			DisplayMode = PdfDisplayMode.SinglePageContinuous,
+			VerticalOptions = LayoutOptions.FillAndExpand,
+			HorizontalOptions = LayoutOptions.FillAndExpand,
 		};
-		using var nsData = NSData.FromArray(pdfData);
-		if (nsData is not null)
+		webView.Source = new HtmlWebViewSource
 		{
-			pdfView.Document = new PdfDocument(nsData);
-		}
-		// Wrap in a MAUI View via handler
-		var mauiView = new PdfKitView { PdfData = pdfData };
-		return mauiView;
+			Html = $"<!DOCTYPE html><html><body style='margin:0;'>" +
+			       $"<embed src='data:application/pdf;base64,{base64}' " +
+			       $"type='application/pdf' width='100%' height='100%' />" +
+			       $"</body></html>"
+		};
+		return webView;
 	}
-}
-
-/// <summary>
-/// MAUI View that hosts a native PDFKit PDFView via a handler.
-/// </summary>
-public class PdfKitView : View
-{
-	public byte[]? PdfData { get; set; }
 }
