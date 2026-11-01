@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk.Maui">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFrameworks>net10.0-ios</TargetFrameworks>
     <SupportedOSPlatformVersion>17.0</SupportedOSPlatformVersion>
