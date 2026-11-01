@@ -1,0 +1,20 @@
+name: Diagnose Sdks contents
+
+on: workflow_dispatch
+
+jobs:
+  diag:
+    runs-on: macos-26
+    steps:
+      - name: Inspect Sdks folder
+        shell: bash
+        run: |
+          dotnet workload install maui 2>&1 | tail -2
+          echo "=== Sdks contents ==="
+          find /Users/runner/.dotnet/packs/Microsoft.Maui.Sdk -name "Sdks" -type d -exec ls -la {} \; 2>/dev/null
+          echo ""
+          echo "=== Looking for Microsoft.NET.Sdk.Maui ==="
+          find /Users/runner/.dotnet/packs -type d -iname "*Microsoft.NET.Sdk.Maui*" 2>/dev/null | head -5 || echo "(not found)"
+          echo ""
+          echo "=== All SDK dirs in maui pack ==="
+          find /Users/runner/.dotnet/packs/Microsoft.Maui.Sdk -type d -name "Sdk" 2>/dev/null | head -10
