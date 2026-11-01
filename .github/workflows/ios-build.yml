@@ -47,9 +47,11 @@ jobs:
           sudo xcode-select -switch /Applications/Xcode_16.4.app/Contents/Developer
           xcodebuild -version
 
-      - name: Install MAUI workload
+      - name: Reinstall MAUI workload
         shell: bash
-        run: dotnet workload install maui --ignore-failed-sources
+        run: |
+          dotnet workload uninstall maui || true
+          dotnet workload install maui --ignore-failed-sources
 
       - name: Restore and build
         shell: bash
