@@ -31,36 +31,10 @@ jobs:
       - name: Install .NET 10 SDK
         uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: '10.0.403'
+          dotnet-version: '10.0.100'
 
-      - name: "Nuke: empty pack shells"
-        shell: bash
-        run: |
-          D="/Users/runner/.dotnet"
-          echo "=== Deleting all Microsoft workload packs ==="
-          rm -rf "$D/packs/Microsoft.Maui."*
-          rm -rf "$D/packs/Microsoft.iOS."*
-          rm -rf "$D/packs/Microsoft.MacCatalyst."*
-          rm -rf "$D/packs/Microsoft.Android."*
-          rm -rf "$D/packs/Microsoft.NETCore.App.Runtime."*Mono*
-          echo "=== Deleting workload metadata ==="
-          rm -rf "$D/metadata/workloads"
-          echo "=== Deleting manifests ==="
-          rm -rf "$D/sdk-manifests/10.0.100/microsoft.net.sdk.maui"
-          rm -rf "$D/sdk-manifests/10.0.100/microsoft.net.sdk.ios"
-          rm -rf "$D/sdk-manifests/10.0.100/microsoft.net.sdk.maccatalyst"
-          rm -rf "$D/sdk-manifests/10.0.100/microsoft.net.sdk.android"
-          echo "Nuke complete."
-
-      - name: "Install: MAUI workload (no skip flags, verbose)"
-        shell: bash
-        run: dotnet workload install maui --verbosity detailed 2>&1 | tail -30
-
-      - name: "Verify: pack has Sdks folder"
-        shell: bash
-        run: |
-          find /Users/runner/.dotnet/packs/Microsoft.Maui.Sdk -maxdepth 3 -name "Sdks" -type d 2>/dev/null || (echo "::error::No Sdks folder in pack - download failed" && exit 1)
-          echo "Pack Sdks folder verified."
+      - name: Install MAUI workload
+        run: dotnet workload install maui --verbosity minimal
 
       - name: Restore dependencies
         run: dotnet restore FileKeep.Reader.iOS/FileKeep.Reader.iOS.csproj
