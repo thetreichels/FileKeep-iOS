@@ -25,7 +25,7 @@ public static class BundleOpener
 
 		var tcs = new TaskCompletionSource<byte[]?>();
 		var picker = new UIDocumentPickerViewController(
-			new[] { UTType.Data.Identifier }, UIDocumentPickerMode.Open);
+			new[] { UTType.Item.Identifier }, UIDocumentPickerMode.Open);
 		_activeDelegate = new PickerDelegate(tcs, () => _activeDelegate = null);
 		picker.Delegate = _activeDelegate;
 		presenter.PresentViewController(picker, true, null);

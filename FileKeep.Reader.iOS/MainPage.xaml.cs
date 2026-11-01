@@ -43,7 +43,7 @@ public partial class MainPage : ContentPage
 
 		string? passphrase = await DisplayPromptAsync(
 			"Unlock", "Export passphrase:", "Open", "Cancel",
-			maxLength: 256, keyboard: Keyboard.Text, initialValue: "", isPassword: true);
+			maxLength: 256, keyboard: Keyboard.Text, initialValue: "");
 		if (string.IsNullOrEmpty(passphrase))
 			return;
 
