@@ -47,27 +47,29 @@ jobs:
         with:
           xcode-version: '26.6'
 
-      - name: "Clean: remove all MAUI workload state"
+      - name: "Clean: remove MAUI workload packs and metadata"
         shell: bash
         run: |
           D="${{ steps.toolchain.outputs.chosen }}"
-          echo "=== Removing workload manifests ==="
-          rm -rf "$D/sdk-manifests" || true
-          echo "=== Removing workload metadata ==="
-          rm -rf "$D/metadata/workloads" || true
           echo "=== Removing MAUI packs ==="
           rm -rf "$D/packs/Microsoft.Maui."* || true
           rm -rf "$D/packs/Microsoft.iOS."* || true
           rm -rf "$D/packs/Microsoft.MacCatalyst."* || true
           rm -rf "$D/packs/Microsoft.Android."* || true
-          echo "=== State after clean ==="
-          ls "$D/sdk-manifests/" 2>/dev/null || echo "(no manifests dir)"
-          "$D/dotnet" workload list 2>&1 || true
+          echo "=== Removing workload install records ==="
+          rm -rf "$D/metadata/workloads" || true
+          echo "=== Removing maui manifests (keep advertising manifests) ==="
+          rm -rf "$D/sdk-manifests"/*/microsoft.net.sdk.maui || true
+          rm -rf "$D/sdk-manifests"/*/microsoft.net.sdk.maccatalyst || true
+          rm -rf "$D/sdk-manifests"/*/microsoft.net.sdk.ios || true
+          rm -rf "$D/sdk-manifests"/*/microsoft.net.sdk.android || true
+          echo "Clean done."
 
       - name: "Install: MAUI workload fresh"
         shell: bash
         run: |
           D="${{ steps.toolchain.outputs.chosen }}"
+          "$D/dotnet" workload update
           "$D/dotnet" workload install maui
           echo "=== Workload list ==="
           "$D/dotnet" workload list
@@ -86,8 +88,6 @@ jobs:
           done
           if [ "$FOUND" -eq 0 ]; then
             echo "::error::MAUI workload manifest NOT found on disk after fresh install. SDK resolver will fail."
-            echo "=== All manifests ==="
-            find "$D/sdk-manifests" -maxdepth 2 -type d 2>/dev/null | head -20
             exit 1
           fi
           echo "Manifest verified on disk."
