@@ -50,8 +50,10 @@ jobs:
       - name: Reinstall MAUI workload
         shell: bash
         run: |
+          sudo xcodebuild -license accept || true
           dotnet workload uninstall maui || true
           dotnet workload install maui --ignore-failed-sources
+          dotnet workload list
 
       - name: Restore and build
         shell: bash
