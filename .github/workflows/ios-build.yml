@@ -26,20 +26,10 @@ jobs:
       - name: Validate submodule
         shell: bash
         run: |
-          echo "=== .gitmodules ==="
-          cat .gitmodules || echo "(no .gitmodules)"
-          echo "=== submodule status before ==="
-          git submodule status || true
-          echo "=== sync and update ==="
           git submodule sync --recursive || true
           git submodule update --init --recursive --force || echo "UPDATE FAILED"
-          echo "=== submodule status after ==="
           git submodule status || true
-          echo "=== external dir ==="
-          ls -la external/ || echo "(no external dir)"
-          ls -la external/FileKeep/ 2>/dev/null || echo "(no external/FileKeep)"
-          echo "=== checking for csproj ==="
-          test -f external/FileKeep/src/FileKeep.Core/FileKeep.Core.csproj && echo "FOUND" || echo "MISSING"
+          ls -la external/FileKeep/src/FileKeep.Core/ 2>/dev/null || echo "(core dir missing)"
 
       - name: Set up .NET 10
         uses: actions/setup-dotnet@v5
@@ -51,24 +41,19 @@ jobs:
         with:
           xcode-version: '16.4'
 
-      - name: Select Xcode and validate SDKs
+      - name: Select Xcode
         shell: bash
         run: |
           sudo xcode-select -switch /Applications/Xcode_16.4.app/Contents/Developer
           xcodebuild -version
-          xcodebuild -showsdks
-          dotnet --list-sdks
 
       - name: Install MAUI workload
         shell: bash
-        run: |
-          dotnet workload update --ignore-failed-sources
-          dotnet workload install maui --ignore-failed-sources
+        run: dotnet workload install maui --ignore-failed-sources
 
       - name: Restore and build
         shell: bash
         run: |
-          dotnet workload restore FileKeep.Reader.iOS/FileKeep.Reader.iOS.csproj
           dotnet restore FileKeep.Reader.iOS/FileKeep.Reader.iOS.csproj
           dotnet build FileKeep.Reader.iOS/FileKeep.Reader.iOS.csproj \
             -f net10.0-ios \
@@ -77,7 +62,8 @@ jobs:
             -p:EnableCodeSigning=false \
             -p:CodesignKey="" \
             -p:CodesignProvision="" \
-            -p:BuildIpa=false
+            -p:BuildIpa=false \
+            --no-restore
 
       - name: Upload simulator app
         if: success()
