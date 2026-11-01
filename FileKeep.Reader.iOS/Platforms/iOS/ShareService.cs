@@ -56,9 +56,9 @@ public static class ShareService
 			_uti = uti;
 		}
 
-		public override NSObject GetPlaceholderItem() => _data;
+		public override NSObject PlaceholderItem => _data;
 
-		public override NSObject GetItemForActivity(UIActivityViewController activityViewController, NSString activityType)
+		public override NSObject GetItem(UIActivityViewController activityViewController, NSString activityType)
 			=> _data;
 
 		public override string GetSubjectForActivity(UIActivityViewController activityViewController, NSString activityType)
