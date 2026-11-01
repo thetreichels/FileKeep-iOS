@@ -33,25 +33,18 @@ jobs:
         with:
           dotnet-version: '10.0.403'
 
-      - name: "Diagnose: workload manifest JSON"
-        shell: bash
-        run: |
-          echo "=== Manifest dir ==="
-          ls /Users/runner/.dotnet/sdk-manifests/10.0.100/ | grep -i maui || echo "(no maui dir)"
-          echo "=== WorkloadManifest.json present? ==="
-          find /Users/runner/.dotnet/sdk-manifests/10.0.100/microsoft.net.sdk.maui -name "WorkloadManifest.json" 2>/dev/null || echo "(no WorkloadManifest.json)"
-          echo "=== Install state ==="
-          cat /Users/runner/.dotnet/metadata/workloads/10.0.100/default.json 2>/dev/null | head -20 || echo "(no install state)"
-
-      - name: "Install: MAUI workload (no skip flags)"
+      - name: "Install: MAUI workload"
         shell: bash
         run: dotnet workload install maui
 
-      - name: "Verify: manifest JSON now present"
+      - name: "Dump: manifest content"
         shell: bash
         run: |
-          find /Users/runner/.dotnet/sdk-manifests/10.0.100/microsoft.net.sdk.maui -name "WorkloadManifest.json" 2>/dev/null || (echo "::error::WorkloadManifest.json still missing after install" && exit 1)
-          echo "Manifest JSON verified."
+          echo "=== Manifest JSON ==="
+          cat /Users/runner/.dotnet/sdk-manifests/10.0.100/microsoft.net.sdk.maui/10.0.110/WorkloadManifest.json 2>/dev/null || echo "(not found)"
+          echo ""
+          echo "=== Maui packs ==="
+          ls /Users/runner/.dotnet/packs/ | grep -i maui || echo "(none)"
 
       - name: Restore dependencies
         run: dotnet restore FileKeep.Reader.iOS/FileKeep.Reader.iOS.csproj
