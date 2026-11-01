@@ -9,7 +9,7 @@ on:
 
 jobs:
   build:
-    runs-on: macos-26
+    runs-on: macos-15
     timeout-minutes: 60
     env:
       DOTNET_CLI_TELEMETRY_OPTOUT: "1"
@@ -23,18 +23,18 @@ jobs:
           submodules: recursive
           fetch-depth: 0
 
-      - name: Set up Xcode 26.6
+      - name: Set up Xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: '26.6'
+          xcode-version: '16.4'
 
       - name: Install .NET 10 SDK
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.100'
 
-      - name: Install MAUI workload
-        run: dotnet workload install maui --verbosity minimal
+      - name: Restore MAUI workloads for the app
+        run: dotnet workload restore FileKeep.Reader.iOS/FileKeep.Reader.iOS.csproj
 
       - name: Restore dependencies
         run: dotnet restore FileKeep.Reader.iOS/FileKeep.Reader.iOS.csproj
