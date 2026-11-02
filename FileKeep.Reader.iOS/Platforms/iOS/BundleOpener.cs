@@ -87,6 +87,7 @@ public static class BundleOpener
 
 		public override void DidPickDocument(UIDocumentPickerViewController controller, NSUrl[] urls)
 		{
+			controller.DismissViewController(true, null);
 			try
 			{
 				NSUrl? url = urls.FirstOrDefault();
@@ -120,6 +121,7 @@ public static class BundleOpener
 
 		public override void WasCancelled(UIDocumentPickerViewController controller)
 		{
+			controller.DismissViewController(true, null);
 			try { _tcs.TrySetResult(null); }
 			finally { _done(); }
 		}
@@ -138,6 +140,7 @@ public static class BundleOpener
 
 		public override void DidPickDocument(UIDocumentPickerViewController controller, NSUrl[] urls)
 		{
+			controller.DismissViewController(true, null);
 			try
 			{
 				NSUrl? url = urls.FirstOrDefault();
@@ -171,6 +174,7 @@ public static class BundleOpener
 
 		public override void WasCancelled(UIDocumentPickerViewController controller)
 		{
+			controller.DismissViewController(true, null);
 			try { _tcs.TrySetResult((null, null)); }
 			finally { _done(); }
 		}
