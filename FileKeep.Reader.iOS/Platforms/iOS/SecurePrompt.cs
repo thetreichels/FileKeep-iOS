@@ -41,6 +41,24 @@ public static class SecurePrompt
 			tf.SecureTextEntry = true;
 			tf.AutocorrectionType = UITextAutocorrectionType.No;
 			tf.AutocapitalizationType = UITextAutocapitalizationType.None;
+
+			// Eye toggle: show/hide the passphrase on demand.
+			var eye = UIButton.FromType(UIButtonType.Custom);
+			eye.Frame = new CoreGraphics.CGRect(0, 0, 32, 32);
+			eye.SetImage(UIImage.GetSystemImage("eye"), UIControlState.Normal);
+			eye.TintColor = UIColor.SystemGray;
+			eye.TouchUpInside += (_, _) =>
+			{
+				// Toggling SecureTextEntry can wipe the text; save/restore it.
+				string? current = tf.Text;
+				tf.SecureTextEntry = !tf.SecureTextEntry;
+				tf.Text = string.Empty;
+				tf.Text = current;
+				eye.SetImage(UIImage.GetSystemImage(
+					tf.SecureTextEntry ? "eye" : "eye.slash"), UIControlState.Normal);
+			};
+			tf.RightView = eye;
+			tf.RightViewMode = UITextFieldViewMode.Always;
 		});
 		alert.AddAction(UIAlertAction.Create("Cancel", UIAlertActionStyle.Cancel, _ =>
 		{
