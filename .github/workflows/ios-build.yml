@@ -81,3 +81,31 @@ jobs:
           name: FileKeep.Reader-simulator
           path: FileKeep.Reader.iOS/bin/Release/net10.0-ios/iossimulator-arm64/*.app
           if-no-files-found: warn
+
+      - name: Build device IPA (unsigned, for SideStore sideloading)
+        if: success()
+        shell: bash
+        run: |
+          dotnet build FileKeep.Reader.iOS/FileKeep.Reader.iOS.csproj \
+            -f net10.0-ios \
+            -c Release \
+            -p:RuntimeIdentifier=ios-arm64 \
+            -p:EnableCodeSigning=false \
+            -p:CodesignKey="" \
+            -p:CodesignProvision="" \
+            -p:BuildIpa=false \
+            --no-restore
+          APP=$(ls -d FileKeep.Reader.iOS/bin/Release/net10.0-ios/ios-arm64/*.app | head -1)
+          echo "app: $APP"
+          rm -rf ipa-staging && mkdir -p ipa-staging/Payload
+          cp -R "$APP" ipa-staging/Payload/
+          (cd ipa-staging && ditto -c -k --sequesterRsrc --keepParent Payload ../FileKeep.Reader-device-unsigned.ipa)
+          ls -la FileKeep.Reader-device-unsigned.ipa
+
+      - name: Upload device IPA
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FileKeep.Reader-device-unsigned
+          path: FileKeep.Reader-device-unsigned.ipa
+          if-no-files-found: warn
