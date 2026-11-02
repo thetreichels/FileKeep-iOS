@@ -4,6 +4,51 @@
              x:Class="FileKeep.Reader.iOS.App">
 	<Application.Resources>
 		<ResourceDictionary>
+			<!-- Dark vault theme: FileKeep brand blue on charcoal -->
+			<Color x:Key="BrandPrimary">#0067C0</Color>
+			<Color x:Key="BrandAccent">#0078D4</Color>
+			<Color x:Key="PageBackground">#1B1B1B</Color>
+			<Color x:Key="Surface">#242424</Color>
+			<Color x:Key="TextPrimary">#FFFFFF</Color>
+			<Color x:Key="TextSecondary">#A6A6A6</Color>
+			<Color x:Key="Divider">#2D2D2D</Color>
+			<Color x:Key="StatusOk">#30D158</Color>
+			<Color x:Key="StatusError">#FF453A</Color>
+
+			<Style TargetType="Page" ApplyToDerivedTypes="True">
+				<Setter Property="BackgroundColor" Value="{StaticResource PageBackground}" />
+			</Style>
+
+			<Style TargetType="Button">
+				<Setter Property="BackgroundColor" Value="{StaticResource BrandAccent}" />
+				<Setter Property="TextColor" Value="White" />
+				<Setter Property="CornerRadius" Value="6" />
+				<Setter Property="Padding" Value="16,10" />
+				<Setter Property="FontAttributes" Value="Bold" />
+			</Style>
+
+			<Style x:Key="AppTitle" TargetType="Label">
+				<Setter Property="TextColor" Value="{StaticResource BrandAccent}" />
+				<Setter Property="FontSize" Value="24" />
+				<Setter Property="FontAttributes" Value="Bold" />
+				<Setter Property="VerticalOptions" Value="Center" />
+			</Style>
+
+			<Style x:Key="StatusText" TargetType="Label">
+				<Setter Property="TextColor" Value="{StaticResource TextSecondary}" />
+				<Setter Property="FontSize" Value="13" />
+			</Style>
+
+			<Style x:Key="FileName" TargetType="Label">
+				<Setter Property="TextColor" Value="{StaticResource TextPrimary}" />
+				<Setter Property="FontAttributes" Value="Bold" />
+				<Setter Property="FontSize" Value="15" />
+			</Style>
+
+			<Style x:Key="FileSize" TargetType="Label">
+				<Setter Property="TextColor" Value="{StaticResource TextSecondary}" />
+				<Setter Property="FontSize" Value="12" />
+			</Style>
 		</ResourceDictionary>
 	</Application.Resources>
 </Application>

@@ -24,4 +24,11 @@
     <ProjectReference Include="../external/FileKeep/src/FileKeep.Core/FileKeep.Core.csproj" />
   </ItemGroup>
 
+  <!-- Branding: FileKeep app icon, splash screen, in-app logo -->
+  <ItemGroup>
+    <MauiIcon Include="Resources\AppIcon\filekeep_icon.png" />
+    <MauiSplashScreen Include="Resources\Splash\splash_icon.png" Color="#1B1B1B" />
+    <MauiImage Include="Resources\Images\filekeep_logo.png" />
+  </ItemGroup>
+
 </Project>

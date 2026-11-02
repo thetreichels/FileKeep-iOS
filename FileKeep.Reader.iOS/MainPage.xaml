@@ -4,22 +4,30 @@
              x:Class="FileKeep.Reader.iOS.MainPage"
              Title="FileKeep Reader">
 	<VerticalStackLayout Padding="20" Spacing="12">
+		<!-- Branded header -->
+		<HorizontalStackLayout Spacing="10">
+			<Image Source="filekeep_logo.png" HeightRequest="36" WidthRequest="36"
+			       VerticalOptions="Center" />
+			<Label Text="FileKeep Reader" Style="{StaticResource AppTitle}" />
+		</HorizontalStackLayout>
+		<BoxView HeightRequest="1" Color="{StaticResource Divider}" />
 		<Button x:Name="OpenButton" Text="Open bundle" Clicked="OnOpenClicked" />
-		<Label x:Name="StatusLabel" Text="No bundle open." />
+		<Label x:Name="StatusLabel" Text="No bundle open." Style="{StaticResource StatusText}" />
 		<CollectionView x:Name="FilesView" SelectionMode="Single"
 		                SelectionChanged="OnFileSelected" HeightRequest="200">
 			<CollectionView.ItemTemplate>
 				<DataTemplate>
 					<VerticalStackLayout Padding="8">
-						<Label Text="{Binding Path}" FontAttributes="Bold" />
-						<Label Text="{Binding Size, StringFormat='{0} bytes'}" />
+						<Label Text="{Binding Path}" Style="{StaticResource FileName}" />
+						<Label Text="{Binding Size, StringFormat='{0} bytes'}" Style="{StaticResource FileSize}" />
 					</VerticalStackLayout>
 				</DataTemplate>
 			</CollectionView.ItemTemplate>
 		</CollectionView>
 		<!-- Slice 2: flexible preview area -->
 		<ContentView x:Name="PreviewContainer" VerticalOptions="FillAndExpand">
-			<Label x:Name="PreviewPlaceholder" Text="Select a file to preview." 
+			<Label x:Name="PreviewPlaceholder" Text="Select a file to preview."
+			       Style="{StaticResource StatusText}"
 			       HorizontalOptions="Center" VerticalOptions="Center" />
 		</ContentView>
 	</VerticalStackLayout>
