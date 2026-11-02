@@ -20,7 +20,7 @@ public static class MauiProgram
 				// Slice 3: blank the app-switcher snapshot and wipe the DEK
 				// the moment the app backgrounds.
 				events.AddiOS(iOS => iOS
-					.OnResignActivation(app => Platforms.iOS.AppLifecycle.OnResignActive(app.Window))
+					.OnResignActivation(app => Platforms.iOS.AppLifecycle.OnResignActive(app))
 					.OnActivated(app => Platforms.iOS.AppLifecycle.OnActivated()));
 #endif
 			});

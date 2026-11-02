@@ -85,8 +85,9 @@ public partial class MainPage : ContentPage
 			}
 		}
 
+		BundleWrap? ykWrap = null;
 		bool offerYubiKey = NfcYubiKey.IsAvailable() &&
-			BundleReader.TryGetYubiKeyWrap(bytes, out var ykWrap) && ykWrap is not null;
+			BundleReader.TryGetYubiKeyWrap(bytes, out ykWrap) && ykWrap is not null;
 		if (offerYubiKey)
 		{
 			bool? choice = await SecurePrompt.PickUnlockMethodAsync();

@@ -14,8 +14,21 @@ public static class AppLifecycle
 {
 	private static UIView? _blankOverlay;
 
-	public static void OnResignActive(UIWindow? window)
+	public static void OnResignActive(UIApplication app)
 	{
+		// UIApplication has no Window of its own (scene-based lifecycle):
+		// find the key window through the connected window scenes.
+		UIWindow? window = null;
+		foreach (var scene in app.ConnectedScenes)
+		{
+			if (scene is UIWindowScene windowScene)
+			{
+				window = windowScene.Windows.FirstOrDefault(w => w.IsKeyWindow)
+					?? windowScene.Windows.FirstOrDefault();
+				if (window is not null)
+					break;
+			}
+		}
 		if (_blankOverlay is null && window is not null)
 		{
 			_blankOverlay = new UIView(window.Bounds) { BackgroundColor = UIColor.Black };
