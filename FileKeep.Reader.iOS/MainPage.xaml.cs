@@ -24,6 +24,7 @@ public partial class MainPage : ContentPage
 	private string? _sourceHttpUrl; // HTTP download source, for upload-back
 	private readonly Dictionary<string, byte[]> _modified = new(); // path -> new plaintext
 	private readonly HashSet<string> _deleted = new();
+	private bool _isReadOnly;
 	private string? _editingPath;
 	private Editor? _textEditor;
 	private string? _textEditorOriginal;
@@ -59,6 +60,7 @@ public partial class MainPage : ContentPage
 
 		_sourceFileUrl = BundleOpener.LastPickedUrl;
 		_sourceHttpUrl = null;
+		_isReadOnly = false; // Files sources are read/write
 		await OpenBundleBytesAsync(bytes);
 #endif
 	}
@@ -93,6 +95,7 @@ public partial class MainPage : ContentPage
 
 		_sourceFileUrl = null;
 		_sourceHttpUrl = url;
+		_isReadOnly = true; // HTTP sources are read-only
 		await OpenBundleBytesAsync(bytes);
 	}
 
@@ -330,8 +333,9 @@ public partial class MainPage : ContentPage
 
 	private void UpdateDirtyUi()
 	{
-		SaveButton.IsVisible = IsDirty;
-		UploadButton.IsVisible = SessionManager.Instance.IsOpen;
+		SaveButton.IsVisible = IsDirty && !_isReadOnly;
+		UploadButton.IsVisible = SessionManager.Instance.IsOpen && !_isReadOnly;
+		AddFileButton.IsVisible = SessionManager.Instance.IsOpen && !_isReadOnly;
 	}
 #endif
 
@@ -399,9 +403,12 @@ public partial class MainPage : ContentPage
 		var header = new HorizontalStackLayout { Spacing = 8 };
 		var title = new Label { Text = fileName, FontAttributes = FontAttributes.Bold, VerticalOptions = LayoutOptions.Center };
 		header.Children.Add(title);
-		var delete = new Button { Text = "Delete", FontSize = 13 };
-		delete.Clicked += (_, _) => OnDeleteFile(path);
-		header.Children.Add(delete);
+		if (!_isReadOnly)
+		{
+			var delete = new Button { Text = "Delete", FontSize = 13 };
+			delete.Clicked += (_, _) => OnDeleteFile(path);
+			header.Children.Add(delete);
+		}
 
 		View body;
 		if (IsTextExtension(ext))
@@ -440,6 +447,18 @@ public partial class MainPage : ContentPage
 		layout.Children.Add(header);
 		layout.Children.Add(card);
 		PreviewContainer.Content = layout;
+	}
+
+	/// <summary>
+	/// Read-only text view for HTTP sources (no editing).
+	/// </summary>
+	private static View CreateTextViewer(byte[] plaintext)
+	{
+		string text;
+		try { text = Encoding.UTF8.GetString(plaintext); }
+		catch { return CreateHexViewer(plaintext); }
+		var label = new Label { Text = text, FontFamily = "Courier" };
+		return new ScrollView { Content = label, VerticalOptions = LayoutOptions.FillAndExpand };
 	}
 
 	/// <summary>
@@ -554,7 +573,7 @@ public partial class MainPage : ContentPage
 
 	private void OnDeleteFile(string path)
 	{
-		if (!SessionManager.Instance.IsOpen)
+		if (!SessionManager.Instance.IsOpen || _isReadOnly)
 			return;
 		SessionManager.Instance.Touch();
 		_deleted.Add(path);
@@ -580,7 +599,7 @@ public partial class MainPage : ContentPage
 
 	private async void OnAddFileClicked(object? sender, EventArgs e)
 	{
-		if (!SessionManager.Instance.IsOpen)
+		if (!SessionManager.Instance.IsOpen || _isReadOnly)
 			return;
 		SessionManager.Instance.Touch();
 		byte[]? bytes;
@@ -612,7 +631,7 @@ public partial class MainPage : ContentPage
 	/// </summary>
 	private async void OnSaveClicked(object? sender, EventArgs e)
 	{
-		if (!SessionManager.Instance.IsOpen || !IsDirty)
+		if (!SessionManager.Instance.IsOpen || !IsDirty || _isReadOnly)
 			return;
 		SessionManager.Instance.Touch();
 		var reader = SessionManager.Instance.Reader;
