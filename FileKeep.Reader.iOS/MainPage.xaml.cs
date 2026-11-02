@@ -277,6 +277,7 @@ public partial class MainPage : ContentPage
 			return null;
 		}
 	}
+#endif
 
 	
 #if IOS
