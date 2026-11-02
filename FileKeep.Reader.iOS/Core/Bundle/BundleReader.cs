@@ -318,6 +318,23 @@ public sealed class BundleReader : IDisposable
 			throw new ObjectDisposedException(nameof(BundleReader));
 	}
 
+	/// <summary>
+	/// Returns a snapshot of the bundle header (format, wraps, TOTP) for
+	/// the writer. The file list is not included — the writer builds it.
+	/// The wraps are reused unchanged (same DEK, same unlock methods).
+	/// </summary>
+	public BundleHeader GetHeaderSnapshot()
+	{
+		ThrowIfDisposed();
+		return new BundleHeader
+		{
+			Format = _header.Format,
+			Wraps = new List<BundleWrap>(_header.Wraps),
+			Totp = _header.Totp,
+			Files = new List<BundleFileEntry>(),
+		};
+	}
+
 	public void Dispose()
 	{
 		if (_disposed)

@@ -11,8 +11,19 @@
 			<Label Text="FileKeep Reader" Style="{StaticResource AppTitle}" />
 		</HorizontalStackLayout>
 		<BoxView HeightRequest="1" Color="{StaticResource Divider}" />
-		<Button x:Name="OpenButton" Text="Open bundle" Clicked="OnOpenClicked" />
+		<HorizontalStackLayout Spacing="8">
+			<Button x:Name="OpenButton" Text="Open bundle" Clicked="OnOpenClicked"
+			        HorizontalOptions="FillAndExpand" />
+			<Button x:Name="DownloadButton" Text="From URL" Clicked="OnDownloadClicked"
+			        HorizontalOptions="FillAndExpand" />
+		</HorizontalStackLayout>
 		<Label x:Name="StatusLabel" Text="No bundle open." Style="{StaticResource StatusText}" />
+		<HorizontalStackLayout Spacing="8">
+			<Label Text="Files" Style="{StaticResource AppTitle}" FontSize="16"
+			       VerticalOptions="Center" HorizontalOptions="FillAndExpand" />
+			<Button x:Name="AddFileButton" Text="Add" Clicked="OnAddFileClicked"
+			        FontSize="13" Padding="12,6" />
+		</HorizontalStackLayout>
 		<CollectionView x:Name="FilesView" SelectionMode="Single"
 		                SelectionChanged="OnFileSelected" HeightRequest="200">
 			<CollectionView.ItemTemplate>
@@ -24,7 +35,13 @@
 				</DataTemplate>
 			</CollectionView.ItemTemplate>
 		</CollectionView>
-		<!-- Slice 2: flexible preview area -->
+		<HorizontalStackLayout Spacing="8">
+			<Button x:Name="SaveButton" Text="Save bundle" Clicked="OnSaveClicked"
+			        IsVisible="False" HorizontalOptions="FillAndExpand" />
+			<Button x:Name="UploadButton" Text="Upload" Clicked="OnUploadClicked"
+			        IsVisible="False" HorizontalOptions="FillAndExpand" />
+		</HorizontalStackLayout>
+		<!-- Flexible preview area -->
 		<ContentView x:Name="PreviewContainer" VerticalOptions="FillAndExpand">
 			<Label x:Name="PreviewPlaceholder" Text="Select a file to preview."
 			       Style="{StaticResource StatusText}"
