@@ -60,7 +60,8 @@ public partial class MainPage : ContentPage
 
 		_sourceFileUrl = BundleOpener.LastPickedUrl;
 		_sourceHttpUrl = null;
-		_isReadOnly = false; // Files sources are read/write
+		// SMB shares (via Files) are editable only if the user has write permission.
+		_isReadOnly = !IsUrlWritable(_sourceFileUrl);
 		await OpenBundleBytesAsync(bytes);
 #endif
 	}
@@ -97,6 +98,30 @@ public partial class MainPage : ContentPage
 		_sourceHttpUrl = url;
 		_isReadOnly = true; // HTTP sources are read-only
 		await OpenBundleBytesAsync(bytes);
+	}
+
+	/// <summary>
+	/// Checks if a Files URL (local or SMB) is writable. SMB shares with
+	/// read-only permissions report false, and the workspace opens read-only.
+	/// </summary>
+	private static bool IsUrlWritable(NSUrl? url)
+	{
+		if (url?.Path is null)
+			return false;
+		bool scoped = url.StartAccessingSecurityScopedResource();
+		try
+		{
+			return NSFileManager.DefaultManager.IsWritableFile(url.Path);
+		}
+		catch
+		{
+			return false;
+		}
+		finally
+		{
+			if (scoped)
+				url.StopAccessingSecurityScopedResource();
+		}
 	}
 
 	private async Task OpenBundleBytesAsync(byte[] bytes)
