@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using AuthenticationServices;
 using Foundation;
+using UIKit;
 
 namespace FileKeep.Reader.iOS.Platforms.iOS;
 
