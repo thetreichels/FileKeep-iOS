@@ -4,17 +4,18 @@ using UIKit;
 namespace FileKeep.Reader.iOS.Platforms.iOS;
 
 /// <summary>
-/// Native secure passphrase prompt. The secret is captured keystroke by
-/// keystroke into a `char[]` buffer; the text field itself only ever holds
-/// bullet characters, so no `NSString` with the passphrase ever exists.
-/// The buffer is handed to the caller, who must use and then clear it
-/// (BundleReader's `char[]` overload also clears it defensively).
+/// Native secure passphrase prompt. Uses the platform's secure text entry
+/// (bullets, no autocorrection), which handles typing, paste, and
+/// autofill reliably. On Open the text is copied into a caller-owned
+/// `char[]` and the field is cleared immediately; the caller must use
+/// and then clear the buffer (BundleReader's `char[]` overload also
+/// clears it defensively).
 ///
 /// This replaces MAUI's `DisplayPromptAsync`, whose returned `string`
-/// cannot be wiped and which offers no secure-entry field here.
-/// Honest residual: the bullet `NSString`s are not secret, and the OS
-/// keyboard could in principle cache keystrokes — autocorrection and
-/// autocapitalization are disabled to shrink that surface.
+/// cannot be wiped. Honest residual: the `NSString` exists inside the
+/// text field while the prompt is up, and the OS keyboard could in
+/// principle cache keystrokes — autocorrection and autocapitalization
+/// are disabled to shrink that surface.
 /// </summary>
 public static class SecurePrompt
 {
@@ -32,38 +33,26 @@ public static class SecurePrompt
 			return tcs.Task;
 		}
 
-		var buffer = new List<char>();
+		UITextField? field = null;
 		var alert = UIAlertController.Create(title, message, UIAlertControllerStyle.Alert);
 		alert.AddTextField(tf =>
 		{
+			field = tf;
+			tf.SecureTextEntry = true;
 			tf.AutocorrectionType = UITextAutocorrectionType.No;
 			tf.AutocapitalizationType = UITextAutocapitalizationType.None;
-			tf.ShouldChangeCharacters = (textField, range, replacement) =>
-			{
-				if (replacement.Length == 0)
-				{
-					// Backspace.
-					if (buffer.Count > 0)
-						buffer.RemoveAt(buffer.Count - 1);
-				}
-				else
-				{
-					buffer.AddRange(replacement);
-				}
-				// The field shows bullets only; the secret lives in `buffer`.
-				textField.Text = new string('•', buffer.Count);
-				return false;
-			};
 		});
 		alert.AddAction(UIAlertAction.Create("Cancel", UIAlertActionStyle.Cancel, _ =>
 		{
-			buffer.Clear();
+			if (field is not null)
+				field.Text = string.Empty;
 			tcs.TrySetResult(null);
 		}));
 		alert.AddAction(UIAlertAction.Create("Open", UIAlertActionStyle.Default, _ =>
 		{
-			var result = buffer.ToArray();
-			buffer.Clear();
+			char[] result = field?.Text?.ToCharArray() ?? Array.Empty<char>();
+			if (field is not null)
+				field.Text = string.Empty;
 			tcs.TrySetResult(result);
 		}));
 
