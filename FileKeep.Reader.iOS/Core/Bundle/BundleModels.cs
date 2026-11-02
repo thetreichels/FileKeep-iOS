@@ -59,6 +59,17 @@ public sealed class BundleWrap
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string? PrfSaltB64 { get; set; }
 
+	// Layering: "or" (default) — any OR wrap unlocks alone.
+	// "and" — this wrap holds one XOR share; all wraps in the same
+	// Group are required to reconstruct the DEK.
+	[JsonPropertyName("mode")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? Mode { get; set; }
+
+	[JsonPropertyName("group")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? Group { get; set; }
+
 	// All wraps: AES-256-GCM(nonce, DEK) = data (ciphertext || tag).
 	[JsonPropertyName("nonce_b64")]
 	public string NonceB64 { get; set; } = "";

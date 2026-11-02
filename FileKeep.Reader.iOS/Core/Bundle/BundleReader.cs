@@ -210,6 +210,81 @@ public sealed class BundleReader : IDisposable
 	}
 
 	/// <summary>
+	/// Describes the unlock layers: OR wraps (any one unlocks) and AND
+	/// groups (all wraps in a group required, via XOR shares).
+	/// </summary>
+	public (IReadOnlyList<BundleWrap> OrWraps, IReadOnlyDictionary<string, IReadOnlyList<BundleWrap>> AndGroups) GetLayers()
+	{
+		ThrowIfDisposed();
+		var orWraps = new List<BundleWrap>();
+		var andGroups = new Dictionary<string, List<BundleWrap>>();
+		foreach (var w in _header.Wraps)
+		{
+			if (string.Equals(w.Mode, "and", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(w.Group))
+			{
+				if (!andGroups.TryGetValue(w.Group!, out var list))
+					andGroups[w.Group!] = list = new List<BundleWrap>();
+				list.Add(w);
+			}
+			else
+			{
+				orWraps.Add(w); // default mode is "or"
+			}
+		}
+		return (orWraps, andGroups.ToDictionary(kv => kv.Key, kv => (IReadOnlyList<BundleWrap>)kv.Value));
+	}
+
+	/// <summary>
+	/// Opens a bundle with an AND group's shares. Each (wrap, kek) pair
+	/// unwraps one XOR share; all shares are combined to the DEK.
+	/// The caller must supply all wraps from the same group.
+	/// </summary>
+	public static BundleReader OpenWithAndShares(byte[] bundleBytes, IReadOnlyList<(BundleWrap Wrap, byte[] Kek)> shares)
+	{
+		ArgumentNullException.ThrowIfNull(bundleBytes);
+		ArgumentNullException.ThrowIfNull(shares);
+		if (shares.Count < 2)
+			throw new ArgumentException("AND groups need at least 2 shares.", nameof(shares));
+
+		var parsed = ParseHeader(bundleBytes);
+		var header = parsed.Header;
+
+		// Verify all wraps belong to the same AND group.
+		string? group = null;
+		foreach (var (wrap, _) in shares)
+		{
+			if (!string.Equals(wrap.Mode, "and", StringComparison.OrdinalIgnoreCase))
+				throw new InvalidDataException("Wrap is not part of an AND group.");
+			if (group is null)
+				group = wrap.Group;
+			else if (!string.Equals(group, wrap.Group, StringComparison.Ordinal))
+				throw new InvalidDataException("All shares must come from the same AND group.");
+			if (!header.Wraps.Contains(wrap))
+				throw new InvalidDataException("Wrap is not from this bundle.");
+		}
+
+		// Unwrap each share.
+		var dekShares = new byte[shares.Count][];
+		try
+		{
+			for (int i = 0; i < shares.Count; i++)
+			{
+				dekShares[i] = UnwrapDek(shares[i].Wrap, shares[i].Kek);
+			}
+			byte[] dek = DekSharing.Combine(dekShares);
+			var reader = new BundleReader(bundleBytes, header);
+			reader._dek = dek;
+			return reader;
+		}
+		finally
+		{
+			foreach (var s in dekShares)
+				if (s is not null)
+					CryptographicOperations.ZeroMemory(s);
+		}
+	}
+
+	/// <summary>
 	/// Decrypts one file's bytes. Only the opened file is ever
 	/// materialized; the bundle is never fully decrypted.
 	/// </summary>
