@@ -31,4 +31,9 @@
     <MauiImage Include="Resources/Images/filekeep_logo.png" />
   </ItemGroup>
 
+  <!-- Native iOS app icon (Resizetizer doesn't run with Microsoft.NET.Sdk) -->
+  <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'ios'">
+    <ImageAsset Include="Platforms/iOS/Assets.xcassets/AppIcon.appiconset/Contents.json" />
+  </ItemGroup>
+
 </Project>
