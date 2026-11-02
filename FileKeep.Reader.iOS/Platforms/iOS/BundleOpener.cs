@@ -12,7 +12,7 @@ public static class BundleOpener
 {
 	// UIDocumentPickerViewController.Delegate is weak; keep the active
 	// delegate alive for the life of the pick.
-	private static PickerDelegate? _activeDelegate;
+	private static UIDocumentPickerDelegate? _activeDelegate;
 
 	/// <summary>The URL of the last picked bundle (for save-back). Null for HTTP sources.</summary>
 	public static NSUrl? LastPickedUrl { get; private set; }
