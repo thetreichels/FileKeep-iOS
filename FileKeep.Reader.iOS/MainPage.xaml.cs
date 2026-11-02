@@ -25,6 +25,7 @@ public partial class MainPage : ContentPage
 	private readonly Dictionary<string, byte[]> _modified = new(); // path -> new plaintext
 	private readonly HashSet<string> _deleted = new();
 	private bool _isReadOnly;
+	private readonly List<BundleWrap> _pendingWraps = new();
 	private string? _editingPath;
 	private Editor? _textEditor;
 	private string? _textEditorOriginal;
@@ -137,6 +138,7 @@ public partial class MainPage : ContentPage
 		SessionManager.Instance.Open(reader);
 		_modified.Clear();
 		_deleted.Clear();
+		_pendingWraps.Clear();
 		_editingPath = null;
 		RefreshFileList();
 		UpdateDirtyUi();
@@ -186,6 +188,18 @@ public partial class MainPage : ContentPage
 				}
 				// NFC didn't complete — fall through to the passphrase.
 			}
+		}
+
+		// Passkey path (iOS 18+ PRF).
+		if (PasskeyPrf.IsAvailable() && BundleReader.TryGetPasskeyWrap(bytes, out BundleWrap? pkWrap) && pkWrap is not null)
+		{
+			BundleReader? pkReader = await UnlockWithPasskeyAsync(bytes, pkWrap);
+			if (pkReader is not null)
+			{
+				EnrollFaceId(fingerprint, pkReader);
+				return pkReader;
+			}
+			// Passkey didn't complete — fall through to the passphrase.
 		}
 
 		char[]? passphrase = await SecurePrompt.PromptAsync("Unlock bundle", "Export passphrase:");
@@ -275,6 +289,63 @@ public partial class MainPage : ContentPage
 			return null;
 		}
 	}
+
+	/// <summary>
+	/// Passkey path: WebAuthn PRF evaluation on the wrap's salt, KEK via
+	/// HKDF, open the bundle. Returns null when the user cancels or the
+	/// passkey doesn't match (status text explains); caller falls back.
+	/// </summary>
+	private async Task<BundleReader?> UnlockWithPasskeyAsync(byte[] bytes, BundleWrap pkWrap)
+	{
+		byte[] prfSalt;
+		try
+		{
+			prfSalt = Convert.FromBase64String(pkWrap.PrfSaltB64 ??
+				throw new InvalidDataException("Passkey wrap is missing its PRF salt."));
+		}
+		catch (Exception ex) when (ex is InvalidDataException || ex is FormatException)
+		{
+			StatusLabel.Text = "Passkey wrap is missing its PRF salt.";
+			return null;
+		}
+
+		PasskeyPrf.Result result;
+		try
+		{
+			result = await PasskeyPrf.AuthenticateAsync(prfSalt);
+		}
+		finally
+		{
+			CryptographicOperations.ZeroMemory(prfSalt);
+		}
+		if (result.Kek is null)
+		{
+			StatusLabel.Text = result.Error ?? "Passkey cancelled.";
+			return null;
+		}
+		try
+		{
+			byte[] kek = result.Kek;
+			try
+			{
+				return await Task.Run(() => BundleReader.OpenWithPasskey(bytes, kek));
+			}
+			finally
+			{
+				CryptographicOperations.ZeroMemory(kek);
+			}
+		}
+		catch (CryptographicException)
+		{
+			StatusLabel.Text = "This passkey didn't open the bundle.";
+			return null;
+		}
+		catch (Exception ex)
+		{
+			StatusLabel.Text = "Couldn't open bundle: " + ex.Message;
+			return null;
+		}
+	}
 #endif
 
 #if IOS
@@ -354,7 +425,7 @@ public partial class MainPage : ContentPage
 			(IsDirty ? " • modified" : "");
 	}
 
-	private bool IsDirty => _modified.Count > 0 || _deleted.Count > 0;
+	private bool IsDirty => _modified.Count > 0 || _deleted.Count > 0 || _pendingWraps.Count > 0;
 
 	private void UpdateDirtyUi()
 	{
@@ -686,6 +757,7 @@ public partial class MainPage : ContentPage
 							files.Add((kv.Key, kv.Value));
 					}
 					var header = reader.GetHeaderSnapshot();
+					header.Wraps.AddRange(_pendingWraps);
 					byte[] built = BundleWriter.Rebuild(header, dek, files);
 					// Zero decrypted buffers we allocated (modified stay staged until cleared below).
 					foreach (var f in files)
@@ -742,6 +814,7 @@ public partial class MainPage : ContentPage
 			CryptographicOperations.ZeroMemory(kv.Value);
 		_modified.Clear();
 		_deleted.Clear();
+		_pendingWraps.Clear();
 		_editingPath = null;
 		RefreshFileList();
 		UpdateDirtyUi();
@@ -775,7 +848,8 @@ public partial class MainPage : ContentPage
 						var files = new List<(string Path, byte[] Plaintext)>();
 						foreach (var entry in reader.Files)
 							files.Add((entry.Path, reader.OpenFile(entry)));
-						byte[] built = BundleWriter.Rebuild(reader.GetHeaderSnapshot(), dek, files);
+						var h1 = reader.GetHeaderSnapshot(); h1.Wraps.AddRange(_pendingWraps);
+						byte[] built = BundleWriter.Rebuild(h1, dek, files);
 						foreach (var f in files)
 							CryptographicOperations.ZeroMemory(f.Plaintext);
 						return built;
@@ -798,7 +872,8 @@ public partial class MainPage : ContentPage
 					foreach (var kv in _modified)
 						if (!files.Any(f => f.Path == kv.Key))
 							files.Add((kv.Key, kv.Value));
-					byte[] built = BundleWriter.Rebuild(reader.GetHeaderSnapshot(), dek2, files);
+					var h2 = reader.GetHeaderSnapshot(); h2.Wraps.AddRange(_pendingWraps);
+					byte[] built = BundleWriter.Rebuild(h2, dek2, files);
 					foreach (var f in files)
 						if (!_modified.ContainsKey(f.Path))
 							CryptographicOperations.ZeroMemory(f.Plaintext);
@@ -929,6 +1004,7 @@ public partial class MainPage : ContentPage
 			CryptographicOperations.ZeroMemory(kv.Value);
 		_modified.Clear();
 		_deleted.Clear();
+		_pendingWraps.Clear();
 		_editingPath = null;
 		_textEditor = null;
 #endif

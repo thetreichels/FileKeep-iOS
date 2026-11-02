@@ -187,6 +187,29 @@ public sealed class BundleReader : IDisposable
 	}
 
 	/// <summary>
+	/// Opens a bundle with a passkey-derived KEK (the 32-byte PRF output
+	/// is composed into the KEK per the same HKDF construction as YubiKey,
+	/// salt "FileKeep-Passkey-KEK-v1", info "bundle-dek-wrap").
+	/// </summary>
+	public static BundleReader OpenWithPasskey(byte[] bundleBytes, byte[] passkeyKek)
+	{
+		ArgumentNullException.ThrowIfNull(bundleBytes);
+		ArgumentNullException.ThrowIfNull(passkeyKek);
+
+		BundleHeader header;
+		{
+			var parsed = ParseHeader(bundleBytes);
+			header = parsed.Header;
+		}
+		BundleWrap wrap = header.Wraps.FirstOrDefault(w => w.Type == "passkey-prf")
+			?? throw new InvalidDataException("This bundle has no passkey wrap.");
+		byte[] dek = UnwrapDek(wrap, passkeyKek);
+		var reader = new BundleReader(bundleBytes, header);
+		reader._dek = dek;
+		return reader;
+	}
+
+	/// <summary>
 	/// Decrypts one file's bytes. Only the opened file is ever
 	/// materialized; the bundle is never fully decrypted.
 	/// </summary>
@@ -259,7 +282,7 @@ public sealed class BundleReader : IDisposable
 
 		foreach (BundleWrap wrap in header.Wraps)
 		{
-			if (wrap.Type is not ("passphrase" or "yubikey-hmac-sha1"))
+			if (wrap.Type is not ("passphrase" or "yubikey-hmac-sha1" or "passkey-prf"))
 				throw new InvalidDataException(
 					$"Unknown bundle wrap type '{wrap.Type}' — refusing fail-closed.");
 		}

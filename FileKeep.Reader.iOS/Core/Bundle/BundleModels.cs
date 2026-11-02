@@ -53,6 +53,12 @@ public sealed class BundleWrap
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string? ChallengeB64 { get; set; }
 
+	// Passkey wrap only: the 32-byte PRF salt. The reader evaluates the
+	// PRF extension on this salt to get the same 32-byte output.
+	[JsonPropertyName("prf_salt_b64")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? PrfSaltB64 { get; set; }
+
 	// All wraps: AES-256-GCM(nonce, DEK) = data (ciphertext || tag).
 	[JsonPropertyName("nonce_b64")]
 	public string NonceB64 { get; set; } = "";
