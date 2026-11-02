@@ -190,18 +190,6 @@ public partial class MainPage : ContentPage
 			}
 		}
 
-		// Passkey path (iOS 18+ PRF).
-		if (PasskeyPrf.IsAvailable() && BundleReader.TryGetPasskeyWrap(bytes, out BundleWrap? pkWrap) && pkWrap is not null)
-		{
-			BundleReader? pkReader = await UnlockWithPasskeyAsync(bytes, pkWrap);
-			if (pkReader is not null)
-			{
-				EnrollFaceId(fingerprint, pkReader);
-				return pkReader;
-			}
-			// Passkey didn't complete — fall through to the passphrase.
-		}
-
 		char[]? passphrase = await SecurePrompt.PromptAsync("Unlock bundle", "Export passphrase:");
 		if (passphrase is null || passphrase.Length == 0)
 		{
@@ -290,64 +278,7 @@ public partial class MainPage : ContentPage
 		}
 	}
 
-	/// <summary>
-	/// Passkey path: WebAuthn PRF evaluation on the wrap's salt, KEK via
-	/// HKDF, open the bundle. Returns null when the user cancels or the
-	/// passkey doesn't match (status text explains); caller falls back.
-	/// </summary>
-	private async Task<BundleReader?> UnlockWithPasskeyAsync(byte[] bytes, BundleWrap pkWrap)
-	{
-		byte[] prfSalt;
-		try
-		{
-			prfSalt = Convert.FromBase64String(pkWrap.PrfSaltB64 ??
-				throw new InvalidDataException("Passkey wrap is missing its PRF salt."));
-		}
-		catch (Exception ex) when (ex is InvalidDataException || ex is FormatException)
-		{
-			StatusLabel.Text = "Passkey wrap is missing its PRF salt.";
-			return null;
-		}
-
-		PasskeyPrf.Result result;
-		try
-		{
-			result = await PasskeyPrf.AuthenticateAsync(prfSalt);
-		}
-		finally
-		{
-			CryptographicOperations.ZeroMemory(prfSalt);
-		}
-		if (result.Kek is null)
-		{
-			StatusLabel.Text = result.Error ?? "Passkey cancelled.";
-			return null;
-		}
-		try
-		{
-			byte[] kek = result.Kek;
-			try
-			{
-				return await Task.Run(() => BundleReader.OpenWithPasskey(bytes, kek));
-			}
-			finally
-			{
-				CryptographicOperations.ZeroMemory(kek);
-			}
-		}
-		catch (CryptographicException)
-		{
-			StatusLabel.Text = "This passkey didn't open the bundle.";
-			return null;
-		}
-		catch (Exception ex)
-		{
-			StatusLabel.Text = "Couldn't open bundle: " + ex.Message;
-			return null;
-		}
-	}
-#endif
-
+	
 #if IOS
 	/// <summary>
 	/// Face ID path: read the enrolled DEK out of the Keychain (iOS prompts
