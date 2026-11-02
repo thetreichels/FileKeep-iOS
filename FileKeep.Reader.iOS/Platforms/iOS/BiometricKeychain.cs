@@ -47,7 +47,8 @@ public static class BiometricKeychain
 		if (!list.Contains(fingerprint))
 		{
 			list.Add(fingerprint);
-			defaults.SetStringArray(list.ToArray(), EnrolledKey);
+			using var arr = NSArray.FromStrings(list.ToArray());
+			defaults.SetValueForKey(arr, new NSString(EnrolledKey));
 		}
 	}
 
@@ -56,7 +57,10 @@ public static class BiometricKeychain
 		var defaults = NSUserDefaults.StandardUserDefaults;
 		var list = (defaults.StringArrayForKey(EnrolledKey) ?? Array.Empty<string>()).ToList();
 		if (list.Remove(fingerprint))
-			defaults.SetStringArray(list.ToArray(), EnrolledKey);
+		{
+			using var arr = NSArray.FromStrings(list.ToArray());
+			defaults.SetValueForKey(arr, new NSString(EnrolledKey));
+		}
 	}
 
 	/// <summary>
@@ -66,30 +70,44 @@ public static class BiometricKeychain
 	/// </summary>
 	public static bool StoreDek(string fingerprint, byte[] dek)
 	{
-		var access = SecAccessControl.Create(
-			SecAccessible.WhenUnlockedThisDeviceOnly,
-			SecAccessControlCreateFlags.BiometryCurrentSet);
-		if (access is null)
+		// No static Create in this binding — the constructor calls
+		// SecAccessControlCreateWithFlags and yields a zero handle on failure
+		// (e.g. no biometry enrolled).
+		SecAccessControl access;
+		try
+		{
+			access = new SecAccessControl(
+				SecAccessible.WhenUnlockedThisDeviceOnly,
+				SecAccessControlCreateFlags.BiometryCurrentSet);
+		}
+		catch
+		{
+			return false;
+		}
+		if (access.Handle == IntPtr.Zero)
 			return false;
 
-		var query = new SecRecord(SecKind.GenericPassword)
+		using (access)
 		{
-			Service = Service,
-			Account = fingerprint,
-		};
-		// Drop any stale entry (re-wrap after a previous enrollment).
-		SecKeyChain.Remove(query);
+			var query = new SecRecord(SecKind.GenericPassword)
+			{
+				Service = Service,
+				Account = fingerprint,
+			};
+			// Drop any stale entry (re-wrap after a previous enrollment).
+			SecKeyChain.Remove(query);
 
-		using var data = NSData.FromArray(dek);
-		var record = new SecRecord(SecKind.GenericPassword)
-		{
-			Service = Service,
-			Account = fingerprint,
-			ValueData = data,
-			Accessible = SecAccessible.WhenUnlockedThisDeviceOnly,
-			AccessControl = access,
-		};
-		return SecKeyChain.Add(record) == SecStatusCode.Success;
+			using var data = NSData.FromArray(dek);
+			var record = new SecRecord(SecKind.GenericPassword)
+			{
+				Service = Service,
+				Account = fingerprint,
+				ValueData = data,
+				Accessible = SecAccessible.WhenUnlockedThisDeviceOnly,
+				AccessControl = access,
+			};
+			return SecKeyChain.Add(record) == SecStatusCode.Success;
+		}
 	}
 
 	/// <summary>
@@ -104,7 +122,8 @@ public static class BiometricKeychain
 			Service = Service,
 			Account = fingerprint,
 		};
-		var status = SecKeyChain.QueryAsData(query, out NSData? data);
+		// The data comes back as the return value; the out param is the status.
+		var data = SecKeyChain.QueryAsData(query, false, out var status);
 		if (status != SecStatusCode.Success || data is null)
 			return null;
 		try
