@@ -431,7 +431,7 @@ public partial class MainPage : ContentPage
 	{
 		SaveButton.IsVisible = IsDirty && !_isReadOnly;
 		UploadButton.IsVisible = SessionManager.Instance.IsOpen && !_isReadOnly;
-		AddFileButton.IsVisible = SessionManager.Instance.IsOpen && !_isReadOnly;
+		AddFileButton.IsVisible = SessionManager.Instance.IsOpen;
 	}
 #endif
 
@@ -695,9 +695,15 @@ public partial class MainPage : ContentPage
 
 	private async void OnAddFileClicked(object? sender, EventArgs e)
 	{
-		if (!SessionManager.Instance.IsOpen || _isReadOnly)
+		if (!SessionManager.Instance.IsOpen)
 			return;
+		if (_isReadOnly)
+		{
+			StatusLabel.Text = "This bundle is read-only.";
+			return;
+		}
 		SessionManager.Instance.Touch();
+		StatusLabel.Text = "Choose a file to add…";
 		byte[]? bytes;
 		string? name;
 		try
