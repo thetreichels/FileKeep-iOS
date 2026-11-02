@@ -47,6 +47,12 @@ public sealed class BundleWrap
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public int? Slot { get; set; }
 
+	// YubiKey wrap only: the 32-byte challenge the exporter sent to the
+	// key. The reader replays it to get the same HMAC-SHA1 response.
+	[JsonPropertyName("challenge_b64")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? ChallengeB64 { get; set; }
+
 	// All wraps: AES-256-GCM(nonce, DEK) = data (ciphertext || tag).
 	[JsonPropertyName("nonce_b64")]
 	public string NonceB64 { get; set; } = "";

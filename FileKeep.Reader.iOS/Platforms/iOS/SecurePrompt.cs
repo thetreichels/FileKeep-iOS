@@ -79,4 +79,40 @@ public static class SecurePrompt
 		presenter.PresentViewController(alert, true, null);
 		return tcs.Task;
 	}
+
+	/// <summary>
+	/// Action sheet offering the YubiKey NFC path vs. the typed passphrase.
+	/// Returns true for YubiKey, false for passphrase, null when the user
+	/// cancels.
+	/// </summary>
+	public static Task<bool?> PickUnlockMethodAsync()
+	{
+		var tcs = new TaskCompletionSource<bool?>();
+		var presenter = Microsoft.Maui.ApplicationModel.Platform.GetCurrentUIViewController();
+		if (presenter is null)
+		{
+			tcs.SetResult(null);
+			return tcs.Task;
+		}
+
+		var sheet = UIAlertController.Create(
+			"Unlock bundle", "This bundle has a YubiKey wrap.", UIAlertControllerStyle.ActionSheet);
+		sheet.AddAction(UIAlertAction.Create(
+			"Use YubiKey", UIAlertActionStyle.Default, _ => tcs.TrySetResult(true)));
+		sheet.AddAction(UIAlertAction.Create(
+			"Type passphrase", UIAlertActionStyle.Default, _ => tcs.TrySetResult(false)));
+		sheet.AddAction(UIAlertAction.Create(
+			"Cancel", UIAlertActionStyle.Cancel, _ => tcs.TrySetResult(null)));
+
+		if (sheet.PopoverPresentationController is not null && presenter.View is not null)
+		{
+			sheet.PopoverPresentationController.SourceView = presenter.View;
+			var b = presenter.View.Bounds;
+			sheet.PopoverPresentationController.SourceRect =
+				new CoreGraphics.CGRect(b.Width / 2, b.Height / 2, 0, 0);
+		}
+
+		presenter.PresentViewController(sheet, true, null);
+		return tcs.Task;
+	}
 }

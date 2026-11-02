@@ -145,6 +145,26 @@ public sealed class BundleReader : IDisposable
 	}
 
 	/// <summary>
+	/// Peeks at the bundle header for a YubiKey wrap without unlocking.
+	/// The UI uses this to offer the NFC path. Returns false when there
+	/// is no YubiKey wrap or the header can't be read.
+	/// </summary>
+	public static bool TryGetYubiKeyWrap(byte[] bundleBytes, out BundleWrap? wrap)
+	{
+		wrap = null;
+		try
+		{
+			wrap = ParseHeader(bundleBytes).Header.Wraps
+				.FirstOrDefault(w => w.Type == "yubikey-hmac-sha1");
+			return wrap is not null;
+		}
+		catch (Exception ex) when (ex is InvalidDataException || ex is ArgumentException)
+		{
+			return false;
+		}
+	}
+
+	/// <summary>
 	/// Opens a bundle with a YubiKey-derived KEK (slice 4: the 20-byte
 	/// HMAC-SHA1 response is composed into the KEK per DESIGN.md §3.2).
 	/// </summary>

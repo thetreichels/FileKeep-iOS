@@ -52,56 +52,149 @@ public partial class MainPage : ContentPage
 		// bundle, so each package unlocks independently.
 		string fingerprint = Convert.ToHexString(SHA256.HashData(bytes));
 
-		BundleReader reader;
+		BundleReader? reader = await TryUnlockAsync(bytes, fingerprint);
+		if (reader is null)
+			return; // user cancelled, or the error is already on screen
+
+		SessionManager.Instance.Open(reader);
+		FilesView.ItemsSource = reader.Files;
+		StatusLabel.Text = $"{reader.Files.Count} file(s)" +
+			(reader.RequiresTotp ? " — TOTP required (slice 5)" : "");
+#endif
+	}
+
+#if IOS
+	/// <summary>
+	/// Unlock cascade: Face ID (enrolled DEK) → YubiKey NFC (when the
+	/// bundle carries a YubiKey wrap and this device can do NFC) →
+	/// typed passphrase. Returns null when the user cancels; every
+	/// failure path zeroes <paramref name="bytes"/> before returning.
+	/// </summary>
+	private async Task<BundleReader?> TryUnlockAsync(byte[] bytes, string fingerprint)
+	{
 		byte[]? dek = TryFaceIdUnlock(fingerprint);
 		if (dek is not null)
 		{
 			try
 			{
-				reader = BundleReader.OpenWithDek(bytes, dek);
+				return BundleReader.OpenWithDek(bytes, dek);
 			}
 			finally
 			{
 				CryptographicOperations.ZeroMemory(dek);
 			}
 		}
-		else
+
+		bool offerYubiKey = NfcYubiKey.IsAvailable() &&
+			BundleReader.TryGetYubiKeyWrap(bytes, out var ykWrap) && ykWrap is not null;
+		if (offerYubiKey)
 		{
-			char[]? passphrase = await SecurePrompt.PromptAsync("Unlock bundle", "Export passphrase:");
-			if (passphrase is null || passphrase.Length == 0)
-			{
-				if (passphrase is not null)
-					Array.Clear(passphrase);
-				CryptographicOperations.ZeroMemory(bytes);
-				return; // user cancelled
-			}
-			try
-			{
-				// The char[] overload zeroes the passphrase buffer itself.
-				reader = await Task.Run(() => BundleReader.OpenWithPassphrase(bytes, passphrase));
-			}
-			catch (CryptographicException)
+			bool? choice = await SecurePrompt.PickUnlockMethodAsync();
+			if (choice is null)
 			{
 				CryptographicOperations.ZeroMemory(bytes);
-				StatusLabel.Text = "Wrong passphrase.";
-				return;
+				return null; // user cancelled
 			}
-			catch (Exception ex)
+			if (choice == true && ykWrap is not null)
 			{
-				CryptographicOperations.ZeroMemory(bytes);
-				StatusLabel.Text = "Couldn't open bundle: " + ex.Message;
-				return;
+				BundleReader? ykReader = await UnlockWithYubiKeyAsync(bytes, ykWrap);
+				if (ykReader is not null)
+				{
+					EnrollFaceId(fingerprint, ykReader);
+					return ykReader;
+				}
+				// NFC didn't complete — fall through to the passphrase.
 			}
-			EnrollFaceId(fingerprint, reader);
 		}
 
-		SessionManager.Instance.Open(reader);
-		FilesView.ItemsSource = reader.Files;
-		StatusLabel.Text = $"{reader.Files.Count} file(s)" +
-			(reader.RequiresTotp ? " — TOTP required (slice 5)" : "") +
-			(reader.HasYubiKeyWrap ? " — YubiKey wrap present (slice 4)" : "");
-#endif
+		char[]? passphrase = await SecurePrompt.PromptAsync("Unlock bundle", "Export passphrase:");
+		if (passphrase is null || passphrase.Length == 0)
+		{
+			if (passphrase is not null)
+				Array.Clear(passphrase);
+			CryptographicOperations.ZeroMemory(bytes);
+			return null; // user cancelled
+		}
+		try
+		{
+			// The char[] overload zeroes the passphrase buffer itself.
+			var reader = await Task.Run(() => BundleReader.OpenWithPassphrase(bytes, passphrase));
+			EnrollFaceId(fingerprint, reader);
+			return reader;
+		}
+		catch (CryptographicException)
+		{
+			CryptographicOperations.ZeroMemory(bytes);
+			StatusLabel.Text = "Wrong passphrase.";
+			return null;
+		}
+		catch (Exception ex)
+		{
+			CryptographicOperations.ZeroMemory(bytes);
+			StatusLabel.Text = "Couldn't open bundle: " + ex.Message;
+			return null;
+		}
 	}
+
+	/// <summary>
+	/// YubiKey path: NFC challenge-response against the wrap's slot and
+	/// challenge, KEK per DESIGN.md §3.2, open the bundle. Returns null
+	/// when the scan is cancelled or the key doesn't answer (status text
+	/// explains why); the caller then falls back to the passphrase.
+	/// </summary>
+	private async Task<BundleReader?> UnlockWithYubiKeyAsync(byte[] bytes, BundleWrap ykWrap)
+	{
+		int slot = ykWrap.Slot ?? 2;
+		byte[] challenge;
+		try
+		{
+			challenge = Convert.FromBase64String(ykWrap.ChallengeB64 ??
+				throw new InvalidDataException("YubiKey wrap is missing its challenge."));
+		}
+		catch (Exception ex) when (ex is InvalidDataException || ex is FormatException)
+		{
+			StatusLabel.Text = "YubiKey wrap is missing its challenge.";
+			return null;
+		}
+
+		NfcYubiKey.Result result;
+		try
+		{
+			result = await NfcYubiKey.GetKekAsync(slot, challenge);
+		}
+		finally
+		{
+			CryptographicOperations.ZeroMemory(challenge);
+		}
+		if (result.Kek is null)
+		{
+			StatusLabel.Text = result.Error ?? "YubiKey scan cancelled.";
+			return null;
+		}
+		try
+		{
+			byte[] kek = result.Kek;
+			try
+			{
+				return await Task.Run(() => BundleReader.OpenWithYubiKey(bytes, kek));
+			}
+			finally
+			{
+				CryptographicOperations.ZeroMemory(kek);
+			}
+		}
+		catch (CryptographicException)
+		{
+			StatusLabel.Text = "This YubiKey didn't open the bundle (wrong key or slot).";
+			return null;
+		}
+		catch (Exception ex)
+		{
+			StatusLabel.Text = "Couldn't open bundle: " + ex.Message;
+			return null;
+		}
+	}
+#endif
 
 #if IOS
 	/// <summary>

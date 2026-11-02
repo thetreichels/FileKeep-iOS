@@ -63,7 +63,7 @@ Header JSON (snake_case):
   "wraps": [
     {"type": "passphrase", "salt_b64": "...", "iterations": 600000,
      "nonce_b64": "...", "data_b64": "<DEK wrapped under PBKDF2-HMAC-SHA512 KEK>"},
-    {"type": "yubikey-hmac-sha1", "slot": 2,
+    {"type": "yubikey-hmac-sha1", "slot": 2, "challenge_b64": "<32 random bytes>",
      "nonce_b64": "...", "data_b64": "<DEK wrapped under YubiKey KEK>"}
   ],
   "totp": {"required": true, "secret_b64": "<encrypted under DEK>"},
@@ -91,20 +91,28 @@ Header JSON (snake_case):
 - Filenames live only inside the encrypted header. The bundle file on
   disk is opaque.
 
-### 3.2 YubiKey KEK composition (to finalize in FileKeep.Core)
+### 3.2 YubiKey KEK composition (finalized 2026-11-01, slice 4)
 
 The 20-byte HMAC-SHA1 response must become a 256-bit KEK identically on
-Windows and iOS. Recommended:
+Windows and iOS. Finalized (replacing the earlier SHA-256 sketch):
 
 ```
-KEK_yk = SHA-256("FileKeep-yubikey-wrap-v1" || response)
+KEK_yk = HKDF-SHA256(ikm: response, salt: "FileKeep-YubiKey-KEK-v1",
+                      info: "bundle-dek-wrap", length: 32)
 ```
 
 then AES-256-GCM-wrap the DEK under KEK_yk (same wrap shape as the
-desktop's YubiKeyCrypto.Wrap). This must be defined once in
-FileKeep.Core and shared — KeePassXC's composite-key convention is the
-template if this shape needs a second opinion. The response is zeroed
-immediately after use.
+desktop's YubiKeyCrypto.Wrap). This reuses the desktop's proven HKDF
+construction and salt with a bundle-specific info string, so the same
+key + challenge can never collide with the desktop's passphrase-wrap
+KEKs. Defined in the iOS repo as `Core/Bundle/YubiKeyKek.Derive`; the
+FileKeep.Core export side must implement the identical derivation when
+it grows the v2 bundle target. The response is zeroed immediately
+after use.
+
+The wrap carries its own `challenge_b64` (32 random bytes per bundle):
+the reader replays it to the key to reproduce the response. `slot`
+selects the OTP slot (P1 0x30 = slot 1, 0x38 = slot 2).
 
 ### 3.3 Why not reuse the v1 manifest package
 
