@@ -28,5 +28,23 @@
 	<string>FileKeep Reader uses NFC to talk to your YubiKey when unlocking a bundle with a hardware key.</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>FileKeep Reader uses Face ID to unlock bundles you have chosen to remember, instead of typing the passphrase every time.</string>
+	<key>CFBundleIcons</key>
+	<dict>
+		<key>CFBundlePrimaryIcon</key>
+		<dict>
+			<key>CFBundleIconFiles</key>
+			<array>
+				<string>icon-40@2x</string>
+				<string>icon-40@3x</string>
+				<string>icon-60@2x</string>
+				<string>icon-60@3x</string>
+				<string>icon-76@2x</string>
+				<string>icon-83.5@2x</string>
+				<string>icon-29@2x</string>
+				<string>icon-29@3x</string>
+			</array>
+			<UIPrerenderedIcon>false</UIPrerenderedIcon>
+		</dict>
+	</dict>
 </dict>
 </plist>
