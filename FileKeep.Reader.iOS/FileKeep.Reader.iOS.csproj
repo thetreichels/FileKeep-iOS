@@ -12,7 +12,7 @@
 
     <ApplicationTitle>FileKeep Reader</ApplicationTitle>
     <ApplicationId>com.filekeep.reader</ApplicationId>
-    <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
+    <ApplicationDisplayVersion>0.0.1</ApplicationDisplayVersion>
     <ApplicationVersion>1</ApplicationVersion>
 
     <CodesignEntitlements Condition="'$(RuntimeIdentifier)' != 'iossimulator-arm64'">Platforms/iOS/Entitlements.plist</CodesignEntitlements>
@@ -26,14 +26,16 @@
 
   <!-- Branding: FileKeep app icon, splash screen, in-app logo -->
   <ItemGroup>
-    <MauiIcon Include="Resources/AppIcon/filekeep_icon.png" Color="#0078D4" />
     <MauiSplashScreen Include="Resources/Splash/splash_icon.png" Color="#1B1B1B" />
     <MauiImage Include="Resources/Images/filekeep_logo.png" />
   </ItemGroup>
 
   <!-- App icons as BundleResource (asset pipeline broken with this SDK) -->
+  <!-- Link flattens to bundle root where CFBundleIconFiles expects them -->
   <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'ios'">
-    <BundleResource Include="Resources/BundleIcons/*.png" />
+    <BundleResource Include="Resources/BundleIcons/*.png">
+      <Link>%(Filename)%(Extension)</Link>
+    </BundleResource>
   </ItemGroup>
 
 </Project>
