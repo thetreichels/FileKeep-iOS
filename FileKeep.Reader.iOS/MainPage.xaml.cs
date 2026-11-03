@@ -664,6 +664,11 @@ public partial class MainPage : ContentPage
 		RefreshFileList();
 		UpdateDirtyUi();
 		StatusLabel.Text = $"Staged {name} — tap Save bundle to write.";
+		}
+		catch (Exception ex)
+		{
+			StatusLabel.Text = "DIAG: outer catch: " + ex.Message;
+		}
 	}
 
 	/// <summary>
