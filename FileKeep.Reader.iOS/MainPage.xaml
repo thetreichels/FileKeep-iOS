@@ -47,5 +47,8 @@
 			       Style="{StaticResource StatusText}"
 			       HorizontalOptions="Center" VerticalOptions="Center" />
 		</ContentView>
+		<Label x:Name="VersionLabel" Text="v0.0.1"
+		       FontSize="10" TextColor="#666666"
+		       HorizontalOptions="Center" Margin="0,4,0,2" />
 	</VerticalStackLayout>
 </ContentPage>

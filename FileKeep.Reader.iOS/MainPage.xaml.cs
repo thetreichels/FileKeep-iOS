@@ -34,6 +34,7 @@ public partial class MainPage : ContentPage
 	public MainPage()
 	{
 		InitializeComponent();
+		VersionLabel.Text = "v" + Microsoft.Maui.ApplicationModel.AppInfo.Current.VersionString;
 		SessionManager.Instance.Locked += (_, _) =>
 			Microsoft.Maui.ApplicationModel.MainThread.BeginInvokeOnMainThread(ResetPreviewUi);
 	}
