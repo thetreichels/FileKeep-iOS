@@ -289,34 +289,44 @@ public partial class MainPage : ContentPage
 
 		// For a single OR wrap, use the direct open methods which handle
 			// the KEK derivation internally.
-			try
-			{
-				BundleReader? reader = wrap.Type switch
-				{
-					"passphrase" => await UnlockWithPassphraseWrapAsync(bytes, wrap),
-					"yubikey-hmac-sha1" => await UnlockWithYubiKeyAsync(bytes, wrap),
-					_ => null,
-				};
-				if (reader is not null)
-				{
-					EnrollFaceId(fingerprint, reader);
-					return reader;
-				}
-				CryptographicOperations.ZeroMemory(bytes);
-				return null;
-			}
-			catch (CryptographicException)
-			{
-				CryptographicOperations.ZeroMemory(bytes);
-				StatusLabel.Text = "Wrong " + Platforms.iOS.LayerPicker.DescribeWrap(wrap).ToLower() + ".";
-				return null;
-			}
-			catch (Exception ex)
-			{
-				CryptographicOperations.ZeroMemory(bytes);
-				StatusLabel.Text = "Couldn't open bundle: " + ex.Message;
-				return null;
-			}
+		// Delegate to the existing type-specific methods. These find the
+		// wrap by type, which is fine for OR wraps (each holds the full DEK).
+		if (string.Equals(wrap.Type, "yubikey-hmac-sha1", StringComparison.OrdinalIgnoreCase))
+		{
+			var reader = await UnlockWithYubiKeyAsync(bytes, wrap);
+			if (reader is not null)
+				EnrollFaceId(fingerprint, reader);
+			return reader;
+		}
+
+		// Default to passphrase flow.
+		char[]? passphrase = await SecurePrompt.PromptAsync("Unlock bundle", "Export passphrase:");
+		if (passphrase is null || passphrase.Length == 0)
+		{
+			if (passphrase is not null)
+				Array.Clear(passphrase);
+			CryptographicOperations.ZeroMemory(bytes);
+			return null;
+		}
+		try
+		{
+			var reader = await Task.Run(() => BundleReader.OpenWithPassphrase(bytes, passphrase));
+			EnrollFaceId(fingerprint, reader);
+			return reader;
+		}
+		catch (CryptographicException)
+		{
+			CryptographicOperations.ZeroMemory(bytes);
+			StatusLabel.Text = "Wrong passphrase.";
+			return null;
+		}
+		catch (Exception ex)
+		{
+			CryptographicOperations.ZeroMemory(bytes);
+			StatusLabel.Text = "Couldn't open bundle: " + ex.Message;
+			return null;
+		}
+		// Note: OpenWithPassphrase clears the passphrase buffer.
 	}
 
 	/// <summary>
