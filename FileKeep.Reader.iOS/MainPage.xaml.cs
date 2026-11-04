@@ -427,9 +427,9 @@ public partial class MainPage : ContentPage
 		try
 		{
 			var result = await NfcYubiKey.GetKekAsync(slot, challenge);
-			if (result.Status != NfcYubiKey.ResultStatus.Ok || result.Kek is null)
+			if (result.Kek is null)
 			{
-				StatusLabel.Text = "YubiKey didn't respond. Try again.";
+				StatusLabel.Text = result.Error ?? "YubiKey didn't respond. Try again.";
 				return null;
 			}
 			// GetKekAsync returns the derived KEK directly.
