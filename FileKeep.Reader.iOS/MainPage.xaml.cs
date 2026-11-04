@@ -158,6 +158,25 @@ public partial class MainPage : ContentPage
 	/// </summary>
 	private async Task<BundleReader?> TryUnlockAsync(byte[] bytes, string fingerprint)
 	{
+		// Layered unlock: if the bundle has multiple unlock options (OR methods
+		// or AND groups), let the user pick. Otherwise use the classic cascade.
+		if (BundleReader.TryGetLayers(bytes, out var orWraps, out var andGroups))
+		{
+			int totalOptions = orWraps.Count + andGroups.Count;
+			if (totalOptions > 1)
+			{
+				return await UnlockWithLayerChoiceAsync(bytes, fingerprint, orWraps, andGroups);
+			}
+			// Single AND group: go straight to the group flow.
+			if (andGroups.Count == 1)
+			{
+				var groupWraps = andGroups.Values.First();
+				return await UnlockAndGroupAsync(bytes, fingerprint, groupWraps);
+			}
+			// Single OR wrap: fall through to the classic cascade below,
+			// which handles Face ID + the one method.
+		}
+
 		byte[]? dek = TryFaceIdUnlock(fingerprint);
 		if (dek is not null)
 		{
@@ -219,6 +238,206 @@ public partial class MainPage : ContentPage
 		{
 			CryptographicOperations.ZeroMemory(bytes);
 			StatusLabel.Text = "Couldn't open bundle: " + ex.Message;
+			return null;
+		}
+	}
+
+	/// <summary>
+	/// Layered unlock: shows the picker, then unlocks via the chosen
+	/// standalone method or AND group.
+	/// </summary>
+	private async Task<BundleReader?> UnlockWithLayerChoiceAsync(
+		byte[] bytes,
+		string fingerprint,
+		IReadOnlyList<BundleWrap> orWraps,
+		IReadOnlyDictionary<string, IReadOnlyList<BundleWrap>> andGroups)
+	{
+		var choice = await Platforms.iOS.LayerPicker.PickLayerAsync(orWraps, andGroups);
+		if (choice is null)
+		{
+			CryptographicOperations.ZeroMemory(bytes);
+			return null; // user cancelled
+		}
+
+		if (choice.IsAndGroup && choice.AndWraps is not null)
+		{
+			return await UnlockAndGroupAsync(bytes, fingerprint, choice.AndWraps);
+		}
+
+		if (choice.OrWrap is not null)
+		{
+			return await UnlockSingleWrapAsync(bytes, fingerprint, choice.OrWrap);
+		}
+
+		CryptographicOperations.ZeroMemory(bytes);
+		return null;
+	}
+
+	/// <summary>
+	/// Unlocks via a single standalone (OR) wrap.
+	/// </summary>
+	private async Task<BundleReader?> UnlockSingleWrapAsync(
+		byte[] bytes, string fingerprint, BundleWrap wrap)
+	{
+		// Face ID shortcut: if enrolled, try it first for any unlock.
+		byte[]? dek = TryFaceIdUnlock(fingerprint);
+		if (dek is not null)
+		{
+			try { return BundleReader.OpenWithDek(bytes, dek); }
+			finally { CryptographicOperations.ZeroMemory(dek); }
+		}
+
+		byte[]? kek = await GetKekForWrapAsync(wrap);
+		if (kek is null)
+		{
+			CryptographicOperations.ZeroMemory(bytes);
+			return null; // user cancelled
+		}
+		try
+		{
+			// Unwrap the single share (which is the full DEK for OR wraps).
+			var reader = BundleReader.OpenWithAndShares(
+				bytes, new[] { (wrap, kek) }.AsReadOnly());
+			EnrollFaceId(fingerprint, reader);
+			return reader;
+		}
+		catch (CryptographicException)
+		{
+			CryptographicOperations.ZeroMemory(bytes);
+			StatusLabel.Text = "Wrong " + Platforms.iOS.LayerPicker.DescribeWrap(wrap).ToLower() + ".";
+			return null;
+		}
+		catch (Exception ex)
+		{
+			CryptographicOperations.ZeroMemory(bytes);
+			StatusLabel.Text = "Couldn't open bundle: " + ex.Message;
+			return null;
+		}
+		finally
+		{
+			CryptographicOperations.ZeroMemory(kek);
+		}
+	}
+
+	/// <summary>
+	/// AND-group unlock: walks through each method in the group, collecting
+	/// KEKs, then combines the shares to reconstruct the DEK.
+	/// </summary>
+	private async Task<BundleReader?> UnlockAndGroupAsync(
+		byte[] bytes,
+		string fingerprint,
+		IReadOnlyList<BundleWrap> groupWraps)
+	{
+		var shares = new List<(BundleWrap Wrap, byte[] Kek)>();
+		try
+		{
+			for (int i = 0; i < groupWraps.Count; i++)
+			{
+				var wrap = groupWraps[i];
+				StatusLabel.Text = $"Step {i + 1} of {groupWraps.Count}: " +
+					Platforms.iOS.LayerPicker.DescribeWrap(wrap) + "…";
+				byte[]? kek = await GetKekForWrapAsync(wrap);
+				if (kek is null)
+				{
+					CryptographicOperations.ZeroMemory(bytes);
+					StatusLabel.Text = "Unlock cancelled.";
+					return null; // user cancelled
+				}
+				shares.Add((wrap, kek));
+			}
+			var reader = BundleReader.OpenWithAndShares(bytes, shares.AsReadOnly());
+			EnrollFaceId(fingerprint, reader);
+			StatusLabel.Text = "Bundle unlocked.";
+			return reader;
+		}
+		catch (CryptographicException)
+		{
+			CryptographicOperations.ZeroMemory(bytes);
+			StatusLabel.Text = "One of the methods failed — check each step and try again.";
+			return null;
+		}
+		catch (Exception ex)
+		{
+			CryptographicOperations.ZeroMemory(bytes);
+			StatusLabel.Text = "Couldn't open bundle: " + ex.Message;
+			return null;
+		}
+		finally
+		{
+			foreach (var (_, kek) in shares)
+				CryptographicOperations.ZeroMemory(kek);
+		}
+	}
+
+	/// <summary>
+	/// Gets the KEK for a single wrap by prompting the user for that
+	/// method. Returns null if the user cancels. The caller owns the
+	/// returned buffer and must zero it after use.
+	/// </summary>
+	private async Task<byte[]?> GetKekForWrapAsync(BundleWrap wrap)
+	{
+		return wrap.Type switch
+		{
+			"passphrase" => await GetPassphraseKekAsync(wrap),
+			"yubikey-hmac-sha1" => await GetYubiKeyKekAsync(wrap),
+			_ => null, // unsupported method (e.g. passkey-prf not yet implemented)
+		};
+	}
+
+	private async Task<byte[]?> GetPassphraseKekAsync(BundleWrap wrap)
+	{
+		char[]? passphrase = await SecurePrompt.PromptAsync(
+			"Unlock bundle", "Export passphrase:");
+		if (passphrase is null || passphrase.Length == 0)
+		{
+			if (passphrase is not null)
+				Array.Clear(passphrase);
+			return null; // user cancelled
+		}
+		try
+		{
+			return await Task.Run(() => BundleReader.DerivePassphraseKek(wrap, passphrase));
+		}
+		catch
+		{
+			return null;
+		}
+		// Note: DerivePassphraseKek clears the passphrase buffer.
+	}
+
+	private async Task<byte[]?> GetYubiKeyKekAsync(BundleWrap wrap)
+	{
+		if (!NfcYubiKey.IsAvailable())
+		{
+			StatusLabel.Text = "YubiKey NFC is not available on this device.";
+			return null;
+		}
+		int slot = wrap.Slot ?? 2;
+		byte[] challenge;
+		try
+		{
+			challenge = Convert.FromBase64String(wrap.ChallengeB64
+				?? throw new InvalidDataException("YubiKey wrap is missing its challenge."));
+		}
+		catch
+		{
+			StatusLabel.Text = "YubiKey wrap is missing its challenge.";
+			return null;
+		}
+		try
+		{
+			var result = await NfcYubiKey.GetKekAsync(slot, challenge);
+			if (result.Status != NfcYubiKey.ResultStatus.Ok || result.Kek is null)
+			{
+				StatusLabel.Text = "YubiKey didn't respond. Try again.";
+				return null;
+			}
+			// GetKekAsync returns the derived KEK directly.
+			return result.Kek;
+		}
+		catch (Exception ex)
+		{
+			StatusLabel.Text = "YubiKey failed: " + ex.Message;
 			return null;
 		}
 	}
