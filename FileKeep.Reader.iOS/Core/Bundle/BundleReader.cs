@@ -188,7 +188,7 @@ public sealed class BundleReader : IDisposable
 	/// in a group are required together). Returns false if the header is invalid.
 	/// </summary>
 	public static bool TryGetLayers(byte[] bundleBytes,
-		out IReadOnlyList<BundleWrap> orWraps,
+	public static bool TryGetLayers(byte[] bundleBytes,
 
 	/// <summary>
 	/// Derives the KEK for a specific passphrase wrap. Used by the layered
@@ -219,7 +219,7 @@ public sealed class BundleReader : IDisposable
 			Array.Clear(passphrase);
 		}
 	}
-
+		out IReadOnlyList<BundleWrap> orWraps,
 		out IReadOnlyDictionary<string, IReadOnlyList<BundleWrap>> andGroups)
 	{
 		orWraps = Array.Empty<BundleWrap>();
