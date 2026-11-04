@@ -122,4 +122,99 @@ public static class SecurePrompt
 		presenter.PresentViewController(sheet, true, null);
 		return tcs.Task;
 	}
+
+/// <summary>
+/// A user's choice in the layered unlock picker. Either a standalone
+/// OR wrap (unlocks alone) or an AND group (all wraps required together).
+/// </summary>
+public sealed record LayerChoice
+{
+	/// <summary>Set when the user picked a standalone OR method.</summary>
+	public FileKeep.Reader.iOS.Core.Bundle.BundleWrap? OrWrap { get; init; }
+
+	/// <summary>Set when the user picked an AND group.</summary>
+	public string? AndGroupKey { get; init; }
+
+	/// <summary>The wraps in the chosen AND group (null for OR choices).</summary>
+	public IReadOnlyList<FileKeep.Reader.iOS.Core.Bundle.BundleWrap>? AndWraps { get; init; }
+
+	public bool IsAndGroup => AndGroupKey is not null;
+}
+
+public static class LayerPicker
+{
+	/// <summary>
+	/// Shows the layered unlock picker. OR wraps appear as individual
+	/// options ("alone is enough"); AND groups appear as a single option
+	/// labeled with how many methods are required ("BOTH REQUIRED",
+	/// "ALL THREE REQUIRED", etc.). Returns null when the user cancels.
+	/// </summary>
+	public static Task<LayerChoice?> PickLayerAsync(
+		IReadOnlyList<FileKeep.Reader.iOS.Core.Bundle.BundleWrap> orWraps,
+		IReadOnlyDictionary<string, IReadOnlyList<FileKeep.Reader.iOS.Core.Bundle.BundleWrap>> andGroups)
+	{
+		var tcs = new TaskCompletionSource<LayerChoice?>();
+		var presenter = Microsoft.Maui.ApplicationModel.Platform.GetCurrentUIViewController();
+		if (presenter is null)
+		{
+			tcs.SetResult(null);
+			return tcs.Task;
+		}
+
+		var sheet = UIAlertController.Create(
+			"Unlock bundle", "Choose how to unlock:", UIAlertControllerStyle.ActionSheet);
+
+		// Standalone OR methods: each unlocks alone.
+		foreach (var wrap in orWraps)
+		{
+			string label = DescribeWrap(wrap) + " — alone is enough";
+			var w = wrap; // capture
+			sheet.AddAction(UIAlertAction.Create(label, UIAlertActionStyle.Default,
+				_ => tcs.TrySetResult(new LayerChoice { OrWrap = w })));
+		}
+
+		// AND groups: all methods in the group are required.
+		foreach (var kv in andGroups)
+		{
+			string required = kv.Value.Count switch
+			{
+				2 => "BOTH REQUIRED",
+				3 => "ALL THREE REQUIRED",
+				_ => $"ALL {kv.Value.Count} REQUIRED",
+			};
+			string methods = string.Join(" + ", kv.Value.Select(DescribeWrap));
+			string label = $"{methods} — {required}";
+			var key = kv.Key;
+			var wraps = kv.Value;
+			sheet.AddAction(UIAlertAction.Create(label, UIAlertActionStyle.Default,
+				_ => tcs.TrySetResult(new LayerChoice { AndGroupKey = key, AndWraps = wraps })));
+		}
+
+		sheet.AddAction(UIAlertAction.Create(
+			"Cancel", UIAlertActionStyle.Cancel, _ => tcs.TrySetResult(null)));
+
+		if (sheet.PopoverPresentationController is not null && presenter.View is not null)
+		{
+			sheet.PopoverPresentationController.SourceView = presenter.View;
+			var b = presenter.View.Bounds;
+			sheet.PopoverPresentationController.SourceRect =
+				new CoreGraphics.CGRect(b.Width / 2, b.Height / 2, 0, 0);
+		}
+
+		presenter.PresentViewController(sheet, true, null);
+		return tcs.Task;
+	}
+
+	/// <summary>Human-readable name for a wrap type.</summary>
+	public static string DescribeWrap(FileKeep.Reader.iOS.Core.Bundle.BundleWrap wrap)
+	{
+		return wrap.Type switch
+		{
+			"passphrase" => "Passphrase",
+			"yubikey-hmac-sha1" => "YubiKey",
+			"passkey-prf" => "Passkey",
+			_ => wrap.Type,
+		};
+	}
+}
 }
