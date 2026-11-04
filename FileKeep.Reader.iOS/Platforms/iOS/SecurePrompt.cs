@@ -122,6 +122,7 @@ public static class SecurePrompt
 		presenter.PresentViewController(sheet, true, null);
 		return tcs.Task;
 	}
+	}
 
 /// <summary>
 /// A user's choice in the layered unlock picker. Either a standalone
