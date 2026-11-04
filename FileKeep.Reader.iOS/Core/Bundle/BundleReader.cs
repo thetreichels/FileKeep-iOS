@@ -251,6 +251,60 @@ public sealed class BundleReader : IDisposable
 			Array.Clear(passphrase);
 		}
 	}
+
+	/// <summary>
+	/// Creates a new BundleWrap by AES-256-GCM encrypting the given plaintext
+	/// (a DEK or a share) with the KEK. Used when creating new bundles.
+	/// The caller supplies method-specific fields (salt/iterations for
+	/// passphrase, slot/challenge for YubiKey).
+	/// </summary>
+	public static BundleWrap CreateWrap(
+		string type,
+		byte[] kek,
+		byte[] plaintext,
+		string? mode = null,
+		string? group = null,
+		byte[]? salt = null,
+		int? iterations = null,
+		int? slot = null,
+		byte[]? challenge = null)
+	{
+		ArgumentNullException.ThrowIfNull(kek);
+		ArgumentNullException.ThrowIfNull(plaintext);
+		if (kek.Length != KeyDerivation.KeySizeBytes)
+			throw new ArgumentException($"KEK must be {KeyDerivation.KeySizeBytes} bytes.", nameof(kek));
+
+		byte[] nonce = RandomNumberGenerator.GetBytes(ChunkCrypto.NonceSizeBytes);
+		byte[] data = AesGcmEncrypt(kek, nonce, plaintext);
+
+		return new BundleWrap
+		{
+			Type = type,
+			Mode = mode,
+			Group = group,
+			SaltB64 = salt is not null ? Convert.ToBase64String(salt) : null,
+			Iterations = iterations,
+			Slot = slot,
+			ChallengeB64 = challenge is not null ? Convert.ToBase64String(challenge) : null,
+			NonceB64 = Convert.ToBase64String(nonce),
+			DataB64 = Convert.ToBase64String(data),
+		};
+	}
+
+	/// <summary>data = ciphertext || tag.</summary>
+	private static byte[] AesGcmEncrypt(byte[] key, byte[] nonce, byte[] plaintext)
+	{
+		byte[] ciphertext = new byte[plaintext.Length];
+		byte[] tag = new byte[ChunkCrypto.TagSizeBytes];
+		using var gcm = new AesGcm(key, ChunkCrypto.TagSizeBytes);
+		gcm.Encrypt(nonce, plaintext, ciphertext, tag);
+		byte[] out_ = new byte[ciphertext.Length + tag.Length];
+		ciphertext.CopyTo(out_, 0);
+		tag.CopyTo(out_, ciphertext.Length);
+		CryptographicOperations.ZeroMemory(ciphertext);
+		return out_;
+	}
+
 	/// <summary>
 	/// Opens a bundle with a YubiKey-derived KEK (slice 4: the 20-byte
 	/// HMAC-SHA1 response is composed into the KEK per DESIGN.md §3.2).
