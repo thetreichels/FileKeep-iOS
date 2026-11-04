@@ -105,6 +105,159 @@ public partial class MainPage : ContentPage
 		await OpenBundleBytesAsync(bytes);
 	}
 
+	private async void OnNewClicked(object? sender, EventArgs e)
+	{
+#if !IOS
+		await DisplayAlert("Not supported", "Bundle creation needs iOS.", "OK");
+		return;
+#else
+		CloseReader();
+
+		// Step 1: Pick methods.
+		var methods = await Platforms.iOS.NewBundlePicker.PickMethodsAsync(
+			NfcYubiKey.IsAvailable());
+		if (methods is null || methods.Count == 0)
+			return; // user cancelled
+
+		// Step 2: AND or OR?
+		bool requireAll = false;
+		if (methods.Count > 1)
+		{
+			bool? andOr = await Platforms.iOS.NewBundlePicker.AskAndOrAsync(methods.Count);
+			if (andOr is null)
+				return; // user cancelled
+			requireAll = andOr.Value;
+		}
+
+		// Step 3: Set up each method, collect KEKs and wrap metadata.
+		StatusLabel.Text = "Setting up unlock methods…";
+		var wrapInfos = new List<(string Type, byte[] Kek, byte[]? Salt, int? Iterations, int? Slot, byte[]? Challenge)>();
+		try
+		{
+			foreach (var method in methods)
+			{
+				if (method == "passphrase")
+				{
+					char[]? passphrase = await Platforms.iOS.NewBundlePicker.PromptNewPassphraseAsync();
+					if (passphrase is null)
+						return; // user cancelled
+					byte[] salt = RandomNumberGenerator.GetBytes(32);
+					const int iterations = 600000;
+					byte[] kek;
+					try
+					{
+						kek = await Task.Run(() => Rfc2898DeriveBytes.Pbkdf2(
+							passphrase, salt, iterations, HashAlgorithmName.SHA512, KeyDerivation.KeySizeBytes));
+					}
+					finally
+					{
+						Array.Clear(passphrase);
+					}
+					wrapInfos.Add(("passphrase", kek, salt, iterations, null, null));
+				}
+				else if (method == "yubikey-hmac-sha1")
+				{
+					// Generate a fresh challenge for this bundle.
+					byte[] challenge = RandomNumberGenerator.GetBytes(32);
+					int slot = 2;
+					StatusLabel.Text = "Tap your YubiKey…";
+					var result = await NfcYubiKey.GetKekAsync(slot, challenge);
+					if (result.Kek is null)
+					{
+						StatusLabel.Text = result.Error ?? "YubiKey didn't respond.";
+						CryptographicOperations.ZeroMemory(challenge);
+						return;
+					}
+					wrapInfos.Add(("yubikey-hmac-sha1", result.Kek, null, null, slot, challenge));
+				}
+			}
+
+			// Step 4: Generate DEK and create wraps.
+			StatusLabel.Text = "Creating bundle…";
+			byte[] dek = RandomNumberGenerator.GetBytes(KeyDerivation.KeySizeBytes);
+			try
+			{
+				var wraps = new List<BundleWrap>();
+				if (requireAll && wrapInfos.Count > 1)
+				{
+					// AND: split DEK into shares, wrap each share.
+					byte[][] shares = DekSharing.Split(dek, wrapInfos.Count);
+					try
+					{
+						for (int i = 0; i < wrapInfos.Count; i++)
+						{
+							var (type, kek, salt, iterations, slot, challenge) = wrapInfos[i];
+							var wrap = BundleReader.CreateWrap(
+								type, kek, shares[i],
+								mode: "and", group: "g1",
+								salt: salt, iterations: iterations,
+								slot: slot, challenge: challenge);
+							wraps.Add(wrap);
+						}
+					}
+					finally
+					{
+						foreach (var s in shares)
+							CryptographicOperations.ZeroMemory(s);
+					}
+				}
+				else
+				{
+					// OR: each wrap holds the full DEK.
+					foreach (var (type, kek, salt, iterations, slot, challenge) in wrapInfos)
+					{
+						var wrap = BundleReader.CreateWrap(
+							type, kek, dek,
+							salt: salt, iterations: iterations,
+							slot: slot, challenge: challenge);
+						wraps.Add(wrap);
+					}
+				}
+
+				// Step 5: Build the bundle and open it.
+				var header = new BundleHeader
+				{
+					Format = BundleReader.ExpectedFormat,
+					Wraps = wraps,
+					Files = new List<BundleFileEntry>(),
+				};
+				byte[] bundleBytes = await Task.Run(() =>
+					BundleWriter.Rebuild(header, dek, Array.Empty<(string, byte[])>()));
+
+				var reader = BundleReader.OpenWithDek(bundleBytes, dek);
+				CryptographicOperations.ZeroMemory(bundleBytes);
+
+				// Open in the session as a new unsaved bundle.
+				SessionManager.Instance.Open(reader);
+				_sourceFileUrl = null;
+				_sourceHttpUrl = null;
+				_isReadOnly = false;
+				_isNewBundle = true;
+				_modified.Clear();
+				_deleted.Clear();
+				_pendingWraps.Clear();
+				RefreshFileList();
+				UpdateDirtyUi();
+				StatusLabel.Text = "New bundle created — add files, then Save.";
+			}
+			finally
+			{
+				CryptographicOperations.ZeroMemory(dek);
+			}
+		}
+		finally
+		{
+			foreach (var (_, kek, _, _, _, challenge) in wrapInfos)
+			{
+				CryptographicOperations.ZeroMemory(kek);
+				if (challenge is not null)
+					CryptographicOperations.ZeroMemory(challenge);
+			}
+		}
+#endif
+	}
+
+
 	/// <summary>
 	/// Checks if a Files URL (local or SMB) is writable. SMB shares with
 	/// read-only permissions report false, and the workspace opens read-only.
