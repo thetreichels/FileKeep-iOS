@@ -188,7 +188,6 @@ public sealed class BundleReader : IDisposable
 	/// in a group are required together). Returns false if the header is invalid.
 	/// </summary>
 	public static bool TryGetLayers(byte[] bundleBytes,
-	public static bool TryGetLayers(byte[] bundleBytes,
 
 	/// <summary>
 	/// Derives the KEK for a specific passphrase wrap. Used by the layered
