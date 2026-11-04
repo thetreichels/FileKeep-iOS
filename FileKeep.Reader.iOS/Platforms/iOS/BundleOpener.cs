@@ -74,6 +74,52 @@ public static class BundleOpener
 		}
 	}
 
+	/// <summary>
+	/// Presents the iOS document picker in export mode so the user can
+	/// save bundle bytes to Files (or another destination). Returns true
+	/// if the user completed the export, false if they cancelled.
+	/// </summary>
+	public static Task<bool> ExportBundleAsync(byte[] bundleBytes)
+	{
+		var tcs = new TaskCompletionSource<bool>();
+		var presenter = Microsoft.Maui.ApplicationModel.Platform.GetCurrentUIViewController();
+		if (presenter is null)
+		{
+			tcs.SetResult(false);
+			return tcs.Task;
+		}
+
+		// Write to a temp file for the picker.
+		string tempPath = System.IO.Path.Combine(
+			System.IO.Path.GetTempPath(), $"bundle-{Guid.NewGuid():N}.kfb");
+		try
+		{
+			System.IO.File.WriteAllBytes(tempPath, bundleBytes);
+		}
+		catch
+		{
+			tcs.SetResult(false);
+			return tcs.Task;
+		}
+
+		var url = Foundation.NSUrl.FromFilename(tempPath);
+		var picker = new UIKit.UIDocumentPickerViewController(url, false);
+		picker.DidPickDocument += (_, _) =>
+		{
+			try { System.IO.File.Delete(tempPath); } catch { }
+			tcs.TrySetResult(true);
+		};
+		picker.WasCancelled += (_, _) =>
+		{
+			try { System.IO.File.Delete(tempPath); } catch { }
+			tcs.TrySetResult(false);
+		};
+
+		presenter.PresentViewController(picker, true, null);
+		return tcs.Task;
+	}
+
+
 	private sealed class PickerDelegate : UIDocumentPickerDelegate
 	{
 		private readonly TaskCompletionSource<byte[]?> _tcs;
