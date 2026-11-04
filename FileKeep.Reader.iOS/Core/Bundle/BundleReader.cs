@@ -188,6 +188,39 @@ public sealed class BundleReader : IDisposable
 	/// in a group are required together). Returns false if the header is invalid.
 	/// </summary>
 	public static bool TryGetLayers(byte[] bundleBytes,
+		out IReadOnlyList<BundleWrap> orWraps,
+		out IReadOnlyDictionary<string, IReadOnlyList<BundleWrap>> andGroups)
+	{
+		orWraps = Array.Empty<BundleWrap>();
+		andGroups = new Dictionary<string, IReadOnlyList<BundleWrap>>();
+		try
+		{
+			var header = ParseHeader(bundleBytes).Header;
+			var ors = new List<BundleWrap>();
+			var ands = new Dictionary<string, List<BundleWrap>>();
+			foreach (var w in header.Wraps)
+			{
+				if (string.Equals(w.Mode, "and", StringComparison.OrdinalIgnoreCase) &&
+					!string.IsNullOrEmpty(w.Group))
+				{
+					if (!ands.TryGetValue(w.Group!, out var list))
+						ands[w.Group!] = list = new List<BundleWrap>();
+					list.Add(w);
+				}
+				else
+				{
+					ors.Add(w); // default mode is "or"
+				}
+			}
+			orWraps = ors;
+			andGroups = ands.ToDictionary(kv => kv.Key, kv => (IReadOnlyList<BundleWrap>)kv.Value);
+			return true;
+		}
+		catch (Exception ex) when (ex is InvalidDataException || ex is ArgumentException)
+		{
+			return false;
+		}
+	}
 
 	/// <summary>
 	/// Derives the KEK for a specific passphrase wrap. Used by the layered
