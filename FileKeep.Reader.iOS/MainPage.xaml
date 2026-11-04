@@ -21,7 +21,7 @@
 		<HorizontalStackLayout Spacing="8">
 			<Label Text="Files" Style="{StaticResource AppTitle}" FontSize="16"
 			       VerticalOptions="Center" HorizontalOptions="FillAndExpand" />
-			<Button x:Name="AddFileButton" Text="Add" Clicked="OnAddFileClicked"
+			<Button x:Name="AddFileButton" Text="Add" Clicked="OnAddFileClicked" IsVisible="False"
 			        FontSize="13" Padding="12,6" />
 		</HorizontalStackLayout>
 		<CollectionView x:Name="FilesView" SelectionMode="Single"

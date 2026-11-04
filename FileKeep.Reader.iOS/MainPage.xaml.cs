@@ -35,6 +35,9 @@ public partial class MainPage : ContentPage
 	{
 		InitializeComponent();
 		VersionLabel.Text = "v" + Microsoft.Maui.ApplicationModel.AppInfo.Current.VersionString;
+#if IOS
+		UpdateDirtyUi();
+#endif
 		SessionManager.Instance.Locked += (_, _) =>
 			Microsoft.Maui.ApplicationModel.MainThread.BeginInvokeOnMainThread(ResetPreviewUi);
 	}
@@ -628,23 +631,15 @@ public partial class MainPage : ContentPage
 
 	private async void OnAddFileClicked(object? sender, EventArgs e)
 	{
-		try
+		if (!SessionManager.Instance.IsOpen)
+			return;
+		if (_isReadOnly)
 		{
-			StatusLabel.Text = "DIAG: handler entered";
-			if (!SessionManager.Instance.IsOpen)
-			{
-				StatusLabel.Text = "DIAG: IsOpen=false, silent return";
-				return;
-			}
-			StatusLabel.Text = "DIAG: IsOpen=true";
-			if (_isReadOnly)
-			{
-				StatusLabel.Text = "This bundle is read-only.";
-				return;
-			}
-			StatusLabel.Text = "DIAG: calling Touch";
-			SessionManager.Instance.Touch();
-			StatusLabel.Text = "Choose a file to add…";
+			StatusLabel.Text = "This bundle is read-only.";
+			return;
+		}
+		SessionManager.Instance.Touch();
+		StatusLabel.Text = "Choose a file to add…";
 		byte[]? bytes;
 		string? name;
 		try
