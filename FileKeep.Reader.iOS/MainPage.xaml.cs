@@ -287,36 +287,36 @@ public partial class MainPage : ContentPage
 			finally { CryptographicOperations.ZeroMemory(dek); }
 		}
 
-		byte[]? kek = await GetKekForWrapAsync(wrap);
-		if (kek is null)
-		{
-			CryptographicOperations.ZeroMemory(bytes);
-			return null; // user cancelled
-		}
-		try
-		{
-			// Unwrap the single share (which is the full DEK for OR wraps).
-			var reader = BundleReader.OpenWithAndShares(
-				bytes, new[] { (wrap, kek) }.AsReadOnly());
-			EnrollFaceId(fingerprint, reader);
-			return reader;
-		}
-		catch (CryptographicException)
-		{
-			CryptographicOperations.ZeroMemory(bytes);
-			StatusLabel.Text = "Wrong " + Platforms.iOS.LayerPicker.DescribeWrap(wrap).ToLower() + ".";
-			return null;
-		}
-		catch (Exception ex)
-		{
-			CryptographicOperations.ZeroMemory(bytes);
-			StatusLabel.Text = "Couldn't open bundle: " + ex.Message;
-			return null;
-		}
-		finally
-		{
-			CryptographicOperations.ZeroMemory(kek);
-		}
+		// For a single OR wrap, use the direct open methods which handle
+			// the KEK derivation internally.
+			try
+			{
+				BundleReader? reader = wrap.Type switch
+				{
+					"passphrase" => await UnlockWithPassphraseWrapAsync(bytes, wrap),
+					"yubikey-hmac-sha1" => await UnlockWithYubiKeyAsync(bytes, wrap),
+					_ => null,
+				};
+				if (reader is not null)
+				{
+					EnrollFaceId(fingerprint, reader);
+					return reader;
+				}
+				CryptographicOperations.ZeroMemory(bytes);
+				return null;
+			}
+			catch (CryptographicException)
+			{
+				CryptographicOperations.ZeroMemory(bytes);
+				StatusLabel.Text = "Wrong " + Platforms.iOS.LayerPicker.DescribeWrap(wrap).ToLower() + ".";
+				return null;
+			}
+			catch (Exception ex)
+			{
+				CryptographicOperations.ZeroMemory(bytes);
+				StatusLabel.Text = "Couldn't open bundle: " + ex.Message;
+				return null;
+			}
 	}
 
 	/// <summary>
