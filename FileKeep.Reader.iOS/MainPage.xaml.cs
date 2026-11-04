@@ -25,6 +25,7 @@ public partial class MainPage : ContentPage
 	private readonly Dictionary<string, byte[]> _modified = new(); // path -> new plaintext
 	private readonly HashSet<string> _deleted = new();
 	private bool _isReadOnly;
+	private bool _isNewBundle;
 	private readonly List<BundleWrap> _pendingWraps = new();
 	private string? _editingPath;
 	private Editor? _textEditor;
@@ -296,6 +297,7 @@ public partial class MainPage : ContentPage
 		_modified.Clear();
 		_deleted.Clear();
 		_pendingWraps.Clear();
+		_isNewBundle = false;
 		_editingPath = null;
 		RefreshFileList();
 		UpdateDirtyUi();
@@ -1117,6 +1119,21 @@ public partial class MainPage : ContentPage
 				using var resp = await http.PutAsync(_sourceHttpUrl, new ByteArrayContent(newBundle));
 				StatusLabel.Text = resp.IsSuccessStatusCode ? "Uploaded." : $"Upload failed: {(int)resp.StatusCode}.";
 			}
+			else if (_isNewBundle)
+			{
+				// New bundle: let the user pick where to save it.
+				bool saved = await BundleOpener.ExportBundleAsync(newBundle);
+				if (saved)
+				{
+					StatusLabel.Text = "Saved.";
+					_isNewBundle = false;
+				}
+				else
+				{
+					StatusLabel.Text = "Save cancelled.";
+					return;
+				}
+			}
 			else
 			{
 				StatusLabel.Text = "No destination — use Upload to send it somewhere.";
@@ -1139,6 +1156,7 @@ public partial class MainPage : ContentPage
 		_modified.Clear();
 		_deleted.Clear();
 		_pendingWraps.Clear();
+		_isNewBundle = false;
 		_editingPath = null;
 		RefreshFileList();
 		UpdateDirtyUi();
@@ -1329,6 +1347,7 @@ public partial class MainPage : ContentPage
 		_modified.Clear();
 		_deleted.Clear();
 		_pendingWraps.Clear();
+		_isNewBundle = false;
 		_editingPath = null;
 		_textEditor = null;
 #endif
