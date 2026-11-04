@@ -68,7 +68,7 @@ public partial class MainPage : ContentPage
 		_sourceFileUrl = BundleOpener.LastPickedUrl;
 		_sourceHttpUrl = null;
 		// SMB shares (via Files) are editable only if the user has write permission.
-		_isReadOnly = !IsUrlWritable(_sourceFileUrl);
+		_isReadOnly = true; // export-reader: read-only viewer, never edit
 		await OpenBundleBytesAsync(bytes);
 #endif
 	}
