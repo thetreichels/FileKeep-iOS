@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using FileKeep.Core;
 using FileKeep.Reader.iOS.Core.Bundle;
 using FileKeep.Reader.iOS.Core.Session;
 #if IOS
@@ -115,7 +116,7 @@ public partial class MainPage : ContentPage
 		CloseReader();
 
 		// Step 1: Pick methods.
-		var methods = await Platforms.iOS.NewBundlePicker.PickMethodsAsync(
+		var methods = await NewBundlePicker.PickMethodsAsync(
 			NfcYubiKey.IsAvailable());
 		if (methods is null || methods.Count == 0)
 			return; // user cancelled
@@ -124,7 +125,7 @@ public partial class MainPage : ContentPage
 		bool requireAll = false;
 		if (methods.Count > 1)
 		{
-			bool? andOr = await Platforms.iOS.NewBundlePicker.AskAndOrAsync(methods.Count);
+			bool? andOr = await NewBundlePicker.AskAndOrAsync(methods.Count);
 			if (andOr is null)
 				return; // user cancelled
 			requireAll = andOr.Value;
@@ -139,7 +140,7 @@ public partial class MainPage : ContentPage
 			{
 				if (method == "passphrase")
 				{
-					char[]? passphrase = await Platforms.iOS.NewBundlePicker.PromptNewPassphraseAsync();
+					char[]? passphrase = await NewBundlePicker.PromptNewPassphraseAsync();
 					if (passphrase is null)
 						return; // user cancelled
 					byte[] salt = RandomNumberGenerator.GetBytes(32);

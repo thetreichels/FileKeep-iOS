@@ -103,7 +103,9 @@ public static class BundleOpener
 		}
 
 		var url = Foundation.NSUrl.FromFilename(tempPath);
-		var picker = new UIKit.UIDocumentPickerViewController(url, false);
+		var picker = new UIKit.UIDocumentPickerViewController(
+			new Foundation.NSUrl[] { url },
+			UIKit.UIDocumentPickerMode.Export);
 		picker.DidPickDocument += (_, _) =>
 		{
 			try { System.IO.File.Delete(tempPath); } catch { }
