@@ -89,7 +89,7 @@ public static class BundleOpener
 			return tcs.Task;
 		}
 
-		// Write to a temp file for the picker.
+		// Write to a temp file for the share sheet.
 		string tempPath = System.IO.Path.Combine(
 			System.IO.Path.GetTempPath(), $"bundle-{Guid.NewGuid():N}.kfb");
 		try
@@ -103,23 +103,25 @@ public static class BundleOpener
 		}
 
 		var url = Foundation.NSUrl.FromFilename(tempPath);
-		var picker = new UIKit.UIDocumentPickerViewController(
-			new Foundation.NSUrl[] { url },
-			UIKit.UIDocumentPickerMode.Export);
-		picker.DidPickDocument += (_, _) =>
+		var activity = new UIKit.UIActivityViewController(new Foundation.NSObject[] { url }, null);
+		activity.CompletionWithItemsHandler = (_, completed, _, _) =>
 		{
 			try { System.IO.File.Delete(tempPath); } catch { }
-			tcs.TrySetResult(true);
-		};
-		picker.WasCancelled += (_, _) =>
-		{
-			try { System.IO.File.Delete(tempPath); } catch { }
-			tcs.TrySetResult(false);
+			tcs.TrySetResult(completed);
 		};
 
-		presenter.PresentViewController(picker, true, null);
+		if (activity.PopoverPresentationController is not null && presenter.View is not null)
+		{
+			activity.PopoverPresentationController.SourceView = presenter.View;
+			var b = presenter.View.Bounds;
+			activity.PopoverPresentationController.SourceRect =
+				new CoreGraphics.CGRect(b.Width / 2, b.Height / 2, 0, 0);
+		}
+
+		presenter.PresentViewController(activity, true, null);
 		return tcs.Task;
 	}
+
 
 
 	private sealed class PickerDelegate : UIDocumentPickerDelegate
