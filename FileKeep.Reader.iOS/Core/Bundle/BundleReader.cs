@@ -189,6 +189,37 @@ public sealed class BundleReader : IDisposable
 	/// </summary>
 	public static bool TryGetLayers(byte[] bundleBytes,
 		out IReadOnlyList<BundleWrap> orWraps,
+
+	/// <summary>
+	/// Derives the KEK for a specific passphrase wrap. Used by the layered
+	/// unlock flow to get per-wrap KEKs for AND groups. The caller owns
+	/// the returned buffer and must zero it after use. The passphrase
+	/// buffer is cleared by this method.
+	/// </summary>
+	public static byte[] DerivePassphraseKek(BundleWrap wrap, char[] passphrase)
+	{
+		ArgumentNullException.ThrowIfNull(wrap);
+		ArgumentNullException.ThrowIfNull(passphrase);
+		if (passphrase.Length == 0)
+			throw new ArgumentException("Passphrase must not be empty.", nameof(passphrase));
+		if (!string.Equals(wrap.Type, "passphrase", StringComparison.OrdinalIgnoreCase))
+			throw new ArgumentException("Wrap is not a passphrase wrap.", nameof(wrap));
+
+		byte[] salt = Convert.FromBase64String(wrap.SaltB64
+			?? throw new InvalidDataException("Passphrase wrap is missing its salt."));
+		int iterations = wrap.Iterations
+			?? throw new InvalidDataException("Passphrase wrap is missing its iteration count.");
+		try
+		{
+			return Rfc2898DeriveBytes.Pbkdf2(
+				passphrase, salt, iterations, HashAlgorithmName.SHA512, KeyDerivation.KeySizeBytes);
+		}
+		finally
+		{
+			Array.Clear(passphrase);
+		}
+	}
+
 		out IReadOnlyDictionary<string, IReadOnlyList<BundleWrap>> andGroups)
 	{
 		orWraps = Array.Empty<BundleWrap>();
