@@ -16,6 +16,8 @@
 			        HorizontalOptions="FillAndExpand" />
 			<Button x:Name="DownloadButton" Text="From URL" Clicked="OnDownloadClicked"
 			        HorizontalOptions="FillAndExpand" />
+			<Button x:Name="NewButton" Text="New bundle" Clicked="OnNewClicked"
+			        HorizontalOptions="FillAndExpand" />
 		</HorizontalStackLayout>
 		<Label x:Name="StatusLabel" Text="No bundle open." Style="{StaticResource StatusText}" />
 		<HorizontalStackLayout Spacing="8">
