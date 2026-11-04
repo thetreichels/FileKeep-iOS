@@ -251,41 +251,6 @@ public sealed class BundleReader : IDisposable
 			Array.Clear(passphrase);
 		}
 	}
-		out IReadOnlyList<BundleWrap> orWraps,
-		out IReadOnlyDictionary<string, IReadOnlyList<BundleWrap>> andGroups)
-	{
-		orWraps = Array.Empty<BundleWrap>();
-		andGroups = new Dictionary<string, IReadOnlyList<BundleWrap>>();
-		try
-		{
-			var header = ParseHeader(bundleBytes).Header;
-			var ors = new List<BundleWrap>();
-			var ands = new Dictionary<string, List<BundleWrap>>();
-			foreach (var w in header.Wraps)
-			{
-				if (string.Equals(w.Mode, "and", StringComparison.OrdinalIgnoreCase) &&
-					!string.IsNullOrEmpty(w.Group))
-				{
-					if (!ands.TryGetValue(w.Group!, out var list))
-						ands[w.Group!] = list = new List<BundleWrap>();
-					list.Add(w);
-				}
-				else
-				{
-					ors.Add(w); // default mode is "or"
-				}
-			}
-			orWraps = ors;
-			andGroups = ands.ToDictionary(kv => kv.Key, kv => (IReadOnlyList<BundleWrap>)kv.Value);
-			return true;
-		}
-		catch (Exception ex) when (ex is InvalidDataException || ex is ArgumentException)
-		{
-			return false;
-		}
-	}
-
-
 	/// <summary>
 	/// Opens a bundle with a YubiKey-derived KEK (slice 4: the 20-byte
 	/// HMAC-SHA1 response is composed into the KEK per DESIGN.md §3.2).
