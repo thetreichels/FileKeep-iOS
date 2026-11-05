@@ -8,7 +8,7 @@
 		<Grid Grid.Row="0">
 			<!-- Vault list view: the new home screen ("My Bundles") -->
 			<Grid x:Name="VaultView" Padding="20" RowSpacing="12"
-			      RowDefinitions="Auto,Auto,*,Auto,Auto,Auto">
+			      RowDefinitions="Auto,Auto,Auto,*,Auto,Auto,Auto">
 				<SearchBar x:Name="VaultSearchBar" Grid.Row="0" Placeholder="Search bundles"
 				           BackgroundColor="{StaticResource Surface}"
 				           TextColor="{StaticResource TextPrimary}"
@@ -16,14 +16,17 @@
 				           TextChanged="OnSearchTextChanged" />
 				<Label Grid.Row="1" Text="My Bundles" FontSize="28" FontAttributes="Bold"
 				       TextColor="{StaticResource TextPrimary}" />
-				<CollectionView x:Name="VaultListView" Grid.Row="2" SelectionMode="Single"
+				<Label x:Name="VaultSubtitleLabel" Grid.Row="2"
+				       Text="0 bundles · Encrypted &amp; offline"
+				       Style="{StaticResource StatusText}" />
+				<CollectionView x:Name="VaultListView" Grid.Row="3" SelectionMode="Single"
 				                SelectionChanged="OnRecentSelected">
 					<CollectionView.ItemTemplate>
 						<DataTemplate>
-							<Frame CornerRadius="10" Padding="0" HasShadow="False"
+							<Frame CornerRadius="6" Padding="0" HasShadow="False"
 							       BackgroundColor="{StaticResource Surface}" Margin="0,0,0,8">
 								<Grid ColumnDefinitions="Auto,*,Auto" Padding="12,10" ColumnSpacing="12">
-									<Frame CornerRadius="8" Padding="0" HasShadow="False"
+									<Frame CornerRadius="6" Padding="0" HasShadow="False"
 									       BackgroundColor="#3A3A3A" WidthRequest="44" HeightRequest="44"
 									       VerticalOptions="Center">
 										<Label Text="🔒" FontSize="20"
@@ -52,14 +55,14 @@
 						</DataTemplate>
 					</CollectionView.ItemTemplate>
 				</CollectionView>
-				<HorizontalStackLayout Grid.Row="3" Spacing="8">
+				<HorizontalStackLayout Grid.Row="4" Spacing="8">
 					<Button x:Name="OpenButton" Text="Open bundle" Clicked="OnOpenClicked"
 					        HorizontalOptions="FillAndExpand" />
 					<Button x:Name="DownloadButton" Text="From URL" Clicked="OnDownloadClicked"
 					        HorizontalOptions="FillAndExpand" />
 				</HorizontalStackLayout>
-				<Label x:Name="VaultStatusLabel" Grid.Row="4" Style="{StaticResource StatusText}" />
-				<Label x:Name="VersionLabel" Grid.Row="5" Text="v0.0.1"
+				<Label x:Name="VaultStatusLabel" Grid.Row="5" Style="{StaticResource StatusText}" />
+				<Label x:Name="VersionLabel" Grid.Row="6" Text="v0.0.1"
 				       FontSize="10" TextColor="#666666"
 				       HorizontalOptions="Center" Margin="0,4,0,2" />
 			</Grid>
@@ -127,7 +130,8 @@
 		<!-- Bottom tab bar -->
 		<Grid Grid.Row="1" ColumnDefinitions="*,*,*,*" BackgroundColor="{StaticResource Surface}" Padding="8,6">
 			<Button x:Name="VaultTabButton" Grid.Column="0" Text="🔒 Vault" Clicked="OnVaultTabClicked"
-			        BackgroundColor="Transparent" FontSize="13" Padding="4" />
+			        BackgroundColor="#2D2D2D" TextColor="{StaticResource BrandPrimary}"
+			        FontSize="13" Padding="4" />
 			<Button x:Name="ActivityTabButton" Grid.Column="1" Text="🕐 Activity" Clicked="OnActivityTabClicked"
 			        BackgroundColor="Transparent" TextColor="{StaticResource TextSecondary}"
 			        FontAttributes="None" FontSize="13" Padding="4" />

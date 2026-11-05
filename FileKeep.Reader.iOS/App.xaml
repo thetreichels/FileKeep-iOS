@@ -4,16 +4,17 @@
              x:Class="FileKeep.Reader.iOS.App">
 	<Application.Resources>
 		<ResourceDictionary>
-			<!-- Dark vault theme: FileKeep brand blue on charcoal -->
+			<!-- Windows dark palette parity (FileKeep desktop dark theme) -->
 			<Color x:Key="BrandPrimary">#0067C0</Color>
-			<Color x:Key="BrandAccent">#0078D4</Color>
-			<Color x:Key="PageBackground">#1B1B1B</Color>
-			<Color x:Key="Surface">#242424</Color>
-			<Color x:Key="TextPrimary">#FFFFFF</Color>
-			<Color x:Key="TextSecondary">#A6A6A6</Color>
-			<Color x:Key="Divider">#2D2D2D</Color>
-			<Color x:Key="StatusOk">#30D158</Color>
-			<Color x:Key="StatusError">#FF453A</Color>
+			<Color x:Key="BrandAccent">#0067C0</Color>
+			<Color x:Key="PageBackground">#202020</Color>
+			<Color x:Key="Surface">#2b2b2b</Color>
+			<Color x:Key="TextPrimary">#f3f3f3</Color>
+			<Color x:Key="TextSecondary">#a7a7a7</Color>
+			<Color x:Key="Divider">#353535</Color>
+			<Color x:Key="StatusOk">#6ccb5f</Color>
+			<Color x:Key="StatusError">#f1707b</Color>
+			<Color x:Key="StatusWarn">#f7b955</Color>
 
 			<Style TargetType="Page" ApplyToDerivedTypes="True">
 				<Setter Property="BackgroundColor" Value="{StaticResource PageBackground}" />

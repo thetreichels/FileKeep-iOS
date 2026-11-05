@@ -75,6 +75,7 @@ public partial class MainPage : ContentPage
 		    !url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
 		{
 			StatusLabel.Text = "URL must start with http:// or https://.";
+			StatusLabel.TextColor = StatusColor("StatusError", "#F1707B");
 			SyncVaultStatus();
 			return;
 		}
@@ -270,7 +271,8 @@ public partial class MainPage : ContentPage
 		if (reader is null)
 		{
 			// Unlock failed or was cancelled: the vault list is still
-			// showing, so mirror the reason there.
+			// showing, so mirror the reason there, in the error color.
+			StatusLabel.TextColor = StatusColor("StatusError", "#F1707B");
 			SyncVaultStatus();
 			return;
 		}
@@ -844,7 +846,7 @@ public partial class MainPage : ContentPage
 			CornerRadius = 12,
 			Padding = 12,
 			HasShadow = false,
-			BackgroundColor = Color.FromArgb("#242424"),
+			BackgroundColor = Color.FromArgb("#2b2b2b"),
 			VerticalOptions = LayoutOptions.FillAndExpand,
 		};
 		var layout = new VerticalStackLayout { Spacing = 8 };
@@ -1008,6 +1010,7 @@ public partial class MainPage : ContentPage
 		if (_isReadOnly)
 		{
 			StatusLabel.Text = "This bundle is read-only.";
+			StatusLabel.TextColor = StatusColor("StatusWarn", "#F7B955");
 			return;
 		}
 		SessionManager.Instance.Touch();
@@ -1230,12 +1233,14 @@ public partial class MainPage : ContentPage
 			using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(120) };
 			using var resp = await http.PutAsync(url, new ByteArrayContent(bundleBytes));
 			StatusLabel.Text = resp.IsSuccessStatusCode ? "Uploaded." : $"Upload failed: {(int)resp.StatusCode}.";
+			StatusLabel.TextColor = StatusColor(resp.IsSuccessStatusCode ? "StatusOk" : "StatusError", resp.IsSuccessStatusCode ? "#6CCB5F" : "#F1707B");
 			if (resp.IsSuccessStatusCode)
 				_sourceHttpUrl = url;
 		}
 		catch (Exception ex)
 		{
 			StatusLabel.Text = "Upload failed: " + ex.Message;
+			StatusLabel.TextColor = StatusColor("StatusError", "#F1707B");
 		}
 		finally
 		{
@@ -1266,7 +1271,7 @@ public partial class MainPage : ContentPage
 			CornerRadius = 12,
 			Padding = 16,
 			HasShadow = false,
-			BackgroundColor = Color.FromArgb("#242424"),
+			BackgroundColor = Color.FromArgb("#2b2b2b"),
 			VerticalOptions = LayoutOptions.FillAndExpand,
 		};
 		var buttons = new HorizontalStackLayout { Spacing = 12, HorizontalOptions = LayoutOptions.Center };
@@ -1300,7 +1305,7 @@ public partial class MainPage : ContentPage
 			CornerRadius = 12,
 			Padding = 16,
 			HasShadow = false,
-			BackgroundColor = Color.FromArgb("#242424"),
+			BackgroundColor = Color.FromArgb("#2b2b2b"),
 			VerticalOptions = LayoutOptions.FillAndExpand,
 		};
 		var layout = new VerticalStackLayout { Spacing = 16, VerticalOptions = LayoutOptions.Center };
@@ -1350,6 +1355,7 @@ public partial class MainPage : ContentPage
 #endif
 		PreviewContainer.Content = new Label { Text = "Select a file to preview.", HorizontalOptions = LayoutOptions.Center, VerticalOptions = LayoutOptions.Center };
 		StatusLabel.Text = "No bundle open.";
+		StatusLabel.TextColor = StatusColor("TextSecondary", "#A7A7A7");
 #if IOS
 		UpdateDirtyUi();
 #endif
@@ -1408,23 +1414,46 @@ public partial class MainPage : ContentPage
 		foreach (var button in new[] { VaultTabButton, ActivityTabButton, NewTabButton, SettingsTabButton })
 		{
 			bool isActive = button == active;
-			button.TextColor = isActive ? Color.FromArgb("#FFFFFF") : Color.FromArgb("#A6A6A6");
+			// Windows dark parity: the active nav item is brand blue text
+			// on the #2d2d2d active-nav background; inactive items are
+			// secondary text on transparent.
+			button.TextColor = isActive ? Color.FromArgb("#0067C0") : Color.FromArgb("#A7A7A7");
+			button.BackgroundColor = isActive ? Color.FromArgb("#2D2D2D") : Colors.Transparent;
 			button.FontAttributes = isActive ? FontAttributes.Bold : FontAttributes.None;
 		}
 	}
 
 	/// <summary>
 	/// The bundle view's status is the vault's status while the vault is
-	/// showing (e.g. an unlock failure after tapping a row).
+	/// showing (e.g. an unlock failure after tapping a row) — text and color.
 	/// </summary>
 	private void SyncVaultStatus()
 	{
 		VaultStatusLabel.Text = StatusLabel.Text;
+		VaultStatusLabel.TextColor = StatusLabel.TextColor;
+	}
+
+	/// <summary>
+	/// Windows dark status colors (App.xaml StatusOk/StatusError/StatusWarn),
+	/// with the matching hex as fallback. Never used for method badges —
+	/// those keep the red/blue/purple color-wheel scheme.
+	/// </summary>
+	private static Color StatusColor(string key, string fallback)
+	{
+		if (Application.Current?.Resources.TryGetValue(key, out object? value) == true &&
+			value is Color color)
+		{
+			return color;
+		}
+		return Color.FromArgb(fallback);
 	}
 
 	private void LoadRecents(string? filter = null)
 	{
 		var recents = RecentBundleStore.Load();
+		VaultSubtitleLabel.Text = recents.Count == 1
+			? "1 bundle · Encrypted & offline"
+			: $"{recents.Count} bundles · Encrypted & offline";
 		if (!string.IsNullOrWhiteSpace(filter))
 		{
 			string f = filter.Trim();
@@ -1546,6 +1575,7 @@ public partial class MainPage : ContentPage
 			// Access expired (bookmark stale, file moved): fall back to
 			// the picker — the existing open path — instead of faking it.
 			VaultStatusLabel.Text = "Can't reopen that file — access expired. Pick it again.";
+			VaultStatusLabel.TextColor = StatusColor("StatusError", "#F1707B");
 			await OpenFromPickerAsync();
 			return;
 		}
@@ -1571,6 +1601,7 @@ public partial class MainPage : ContentPage
 		catch (Exception ex)
 		{
 			StatusLabel.Text = "Picker failed: " + ex.Message;
+			StatusLabel.TextColor = StatusColor("StatusError", "#F1707B");
 			SyncVaultStatus();
 			return;
 		}
@@ -1601,6 +1632,7 @@ public partial class MainPage : ContentPage
 		catch (Exception ex)
 		{
 			StatusLabel.Text = "Download failed: " + ex.Message;
+			StatusLabel.TextColor = StatusColor("StatusError", "#F1707B");
 			SyncVaultStatus();
 			return;
 		}
