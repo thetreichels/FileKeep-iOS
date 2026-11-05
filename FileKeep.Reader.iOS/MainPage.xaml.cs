@@ -1014,12 +1014,18 @@ public partial class MainPage : ContentPage
 			return;
 		}
 		SessionManager.Instance.Touch();
+		string choice = await DisplayActionSheet("Add file", "Cancel", null, "Photo", "Video", "File");
+		if (string.IsNullOrEmpty(choice) || choice == "Cancel")
+			return;
 		StatusLabel.Text = "Choose a file to add…";
 		byte[]? bytes;
 		string? name;
 		try
 		{
-			(bytes, name) = await BundleOpener.PickImportFileAsync();
+			if (choice == "Photo" || choice == "Video")
+				(bytes, name) = await PickMediaAsync(choice == "Photo");
+			else
+				(bytes, name) = await BundleOpener.PickImportFileAsync();
 		}
 		catch (Exception ex)
 		{
@@ -1035,6 +1041,29 @@ public partial class MainPage : ContentPage
 		RefreshFileList();
 		UpdateDirtyUi();
 		StatusLabel.Text = $"Staged {name} — tap Save bundle to write.";
+	}
+
+	/// <summary>
+	/// Picks a single photo or video from the photo library via MAUI
+	/// MediaPicker (PHPicker-backed on iOS: no permission prompt, no
+	/// Info.plist usage description needed). Returns (bytes, filename),
+	/// or (null, null) if the user cancelled. MediaPicker is single-pick
+	/// only — one photo or one video per Add action.
+	/// </summary>
+	private static async Task<(byte[]? Bytes, string? Name)> PickMediaAsync(bool photo)
+	{
+		FileResult? result = photo
+			? await Microsoft.Maui.Media.MediaPicker.Default.PickPhotoAsync()
+			: await Microsoft.Maui.Media.MediaPicker.Default.PickVideoAsync();
+		if (result is null)
+			return (null, null);
+		string name = string.IsNullOrWhiteSpace(result.FileName)
+			? (photo ? "photo.jpg" : "video.mov")
+			: result.FileName;
+		using Stream stream = await result.OpenReadAsync();
+		using var ms = new MemoryStream();
+		await stream.CopyToAsync(ms);
+		return (ms.ToArray(), name);
 	}
 
 	/// <summary>
