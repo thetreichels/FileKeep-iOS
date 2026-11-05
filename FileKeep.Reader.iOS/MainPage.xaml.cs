@@ -1689,7 +1689,7 @@ public partial class MainPage : ContentPage
 		try
 		{
 			using NSData? data = url.CreateBookmarkData(
-				NSUrlBookmarkCreationOptions.WithSecurityScope, null, out NSError err);
+				NSUrlBookmarkCreationOptions.WithSecurityScope, null, null, out NSError err);
 			if (data is null || err is not null)
 				return "";
 			return Convert.ToBase64String(data.ToArray());
