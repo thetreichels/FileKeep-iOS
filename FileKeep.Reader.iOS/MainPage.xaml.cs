@@ -92,8 +92,7 @@ public partial class MainPage : ContentPage
 		CloseReader();
 
 		// Step 1: Pick methods.
-		var methods = await NewBundlePicker.PickMethodsAsync(
-			NfcYubiKey.IsAvailable());
+		var methods = await NewBundlePicker.PickMethodsAsync();
 		if (methods is null || methods.Count == 0)
 			return; // user cancelled
 
@@ -297,9 +296,10 @@ public partial class MainPage : ContentPage
 #if IOS
 	/// <summary>
 	/// Unlock cascade: Face ID (enrolled DEK) → YubiKey NFC (when the
-	/// bundle carries a YubiKey wrap and this device can do NFC) →
-	/// typed passphrase. Returns null when the user cancels; every
-	/// failure path zeroes <paramref name="bytes"/> before returning.
+	/// bundle carries a YubiKey wrap; NFC failure is reported loudly
+	/// and falls through) → typed passphrase. Returns null when the
+	/// user cancels; every failure path zeroes <paramref name="bytes"/>
+	/// before returning.
 	/// </summary>
 	private async Task<BundleReader?> TryUnlockAsync(byte[] bytes, string fingerprint)
 	{
@@ -336,8 +336,10 @@ public partial class MainPage : ContentPage
 		}
 
 		BundleWrap? ykWrap = null;
-		bool offerYubiKey = NfcYubiKey.IsAvailable() &&
-			BundleReader.TryGetYubiKeyWrap(bytes, out ykWrap) && ykWrap is not null;
+		// YubiKey is offered whenever the bundle carries a YubiKey wrap.
+		// If this device can't do NFC, GetYubiKeyKekAsync reports it
+		// loudly and the flow falls through to the passphrase.
+		bool offerYubiKey = BundleReader.TryGetYubiKeyWrap(bytes, out ykWrap) && ykWrap is not null;
 		if (offerYubiKey)
 		{
 			bool? choice = await SecurePrompt.PickUnlockMethodAsync();

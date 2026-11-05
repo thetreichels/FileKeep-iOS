@@ -13,8 +13,11 @@ public static class NewBundlePicker
 	/// Asks which methods to use for the new bundle. Returns the list
 	/// of method types (e.g. ["passphrase", "yubikey-hmac-sha1"]), or
 	/// null if the user cancels. Always returns at least one method.
+	/// Both methods are always offered; if this device can't do NFC,
+	/// the YubiKey setup fails loudly at tap time instead of the
+	/// option being silently hidden.
 	/// </summary>
-	public static async Task<List<string>?> PickMethodsAsync(bool yubiKeyAvailable)
+	public static async Task<List<string>?> PickMethodsAsync()
 	{
 		var methods = new List<string>();
 
@@ -26,22 +29,21 @@ public static class NewBundlePicker
 		if (usePassphrase == true)
 			methods.Add("passphrase");
 
-		// YubiKey: only if NFC is available.
-		if (yubiKeyAvailable)
-		{
-			bool? useYubiKey = await AskYesNoAsync(
-				"New bundle", "Use a YubiKey to unlock?");
-			if (useYubiKey is null)
-				return null; // cancelled
-			if (useYubiKey == true)
-				methods.Add("yubikey-hmac-sha1");
-		}
+		// YubiKey: always offered. If NFC is unavailable here, the
+		// tap-time setup reports it (GetKekAsync) instead of hiding
+		// the option — a method the bundle supports is never hidden.
+		bool? useYubiKey = await AskYesNoAsync(
+			"New bundle", "Use a YubiKey to unlock?");
+		if (useYubiKey is null)
+			return null; // cancelled
+		if (useYubiKey == true)
+			methods.Add("yubikey-hmac-sha1");
 
 		if (methods.Count == 0)
 		{
 			// User declined all methods - they must pick at least one.
 			await ShowMessageAsync("New bundle", "Pick at least one unlock method.");
-			return await PickMethodsAsync(yubiKeyAvailable);
+			return await PickMethodsAsync();
 		}
 
 		return methods;
