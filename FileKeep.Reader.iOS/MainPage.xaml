@@ -62,7 +62,7 @@
 					        HorizontalOptions="FillAndExpand" />
 				</HorizontalStackLayout>
 				<Label x:Name="VaultStatusLabel" Grid.Row="5" Style="{StaticResource StatusText}" />
-				<Label x:Name="VersionLabel" Grid.Row="6" Text="v0.0.1"
+				<Label x:Name="VersionLabel" Grid.Row="6" Text="v0.0.2"
 				       FontSize="10" TextColor="#666666"
 				       HorizontalOptions="Center" Margin="0,4,0,2" />
 			</Grid>
