@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using FileKeep.Core;
 using FileKeep.Reader.iOS.Core.Bundle;
+using FileKeep.Reader.iOS.Core.Recents;
 using FileKeep.Reader.iOS.Core.Session;
 #if IOS
 using FileKeep.Reader.iOS.Platforms.iOS;
@@ -31,6 +32,8 @@ public partial class MainPage : ContentPage
 	private string? _editingPath;
 	private Editor? _textEditor;
 	private string? _textEditorOriginal;
+	private string _currentBadgeMethod = "Layered";
+	private string _currentBookmarkB64 = "";
 #endif
 
 	public MainPage()
@@ -41,7 +44,12 @@ public partial class MainPage : ContentPage
 		UpdateDirtyUi();
 #endif
 		SessionManager.Instance.Locked += (_, _) =>
-			Microsoft.Maui.ApplicationModel.MainThread.BeginInvokeOnMainThread(ResetPreviewUi);
+			Microsoft.Maui.ApplicationModel.MainThread.BeginInvokeOnMainThread(() =>
+			{
+				ResetPreviewUi();
+				ShowVault();
+			});
+		ShowVault();
 	}
 
 	private async void OnOpenClicked(object? sender, EventArgs e)
@@ -51,25 +59,7 @@ public partial class MainPage : ContentPage
 		return;
 #else
 		CloseReader();
-
-		byte[]? bytes;
-		try
-		{
-			bytes = await BundleOpener.PickBundleAsync();
-		}
-		catch (Exception ex)
-		{
-			StatusLabel.Text = "Picker failed: " + ex.Message;
-			return;
-		}
-		if (bytes is null)
-			return; // user cancelled
-
-		_sourceFileUrl = BundleOpener.LastPickedUrl;
-		_sourceHttpUrl = null;
-		// SMB shares (via Files) are editable only if the user has write permission.
-		_isReadOnly = !IsUrlWritable(_sourceFileUrl);
-		await OpenBundleBytesAsync(bytes);
+		await OpenFromPickerAsync();
 #endif
 	}
 
@@ -85,26 +75,11 @@ public partial class MainPage : ContentPage
 		    !url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
 		{
 			StatusLabel.Text = "URL must start with http:// or https://.";
+			SyncVaultStatus();
 			return;
 		}
 
-		StatusLabel.Text = "Downloading…";
-		byte[] bytes;
-		try
-		{
-			using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(60) };
-			bytes = await http.GetByteArrayAsync(url);
-		}
-		catch (Exception ex)
-		{
-			StatusLabel.Text = "Download failed: " + ex.Message;
-			return;
-		}
-
-		_sourceFileUrl = null;
-		_sourceHttpUrl = url;
-		_isReadOnly = true; // HTTP sources are read-only
-		await OpenBundleBytesAsync(bytes);
+		await DownloadAndOpenAsync(url);
 	}
 
 	private async void OnNewClicked(object? sender, EventArgs e)
@@ -241,6 +216,7 @@ public partial class MainPage : ContentPage
 				RefreshFileList();
 				UpdateDirtyUi();
 				StatusLabel.Text = "New bundle created — add files, then Save.";
+				ShowBundle();
 			}
 			finally
 			{
@@ -292,7 +268,12 @@ public partial class MainPage : ContentPage
 
 		BundleReader? reader = await TryUnlockAsync(bytes, fingerprint);
 		if (reader is null)
-			return; // user cancelled, or the error is already on screen
+		{
+			// Unlock failed or was cancelled: the vault list is still
+			// showing, so mirror the reason there.
+			SyncVaultStatus();
+			return;
+		}
 
 		SessionManager.Instance.Open(reader);
 		_modified.Clear();
@@ -302,6 +283,12 @@ public partial class MainPage : ContentPage
 		_editingPath = null;
 		RefreshFileList();
 		UpdateDirtyUi();
+		// Badge from the header only (no extra unlock), then record the
+		// bundle in the vault list and switch to the bundle view.
+		_currentBadgeMethod = RecentBundleStore.BadgeMethodFor(bytes);
+		_currentBookmarkB64 = CreateBookmark(_sourceFileUrl);
+		RecordCurrentBundle();
+		ShowBundle();
 	}
 #endif
 
@@ -1107,18 +1094,21 @@ public partial class MainPage : ContentPage
 		}
 
 		// Write back.
+		bool wroteToKnownSource = false;
 		try
 		{
 			if (_sourceFileUrl is not null)
 			{
 				bool ok = BundleOpener.WriteBack(_sourceFileUrl, newBundle);
 				StatusLabel.Text = ok ? "Saved." : "Couldn't write back to the file.";
+				wroteToKnownSource = ok;
 			}
 			else if (_sourceHttpUrl is not null)
 			{
 				using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(60) };
 				using var resp = await http.PutAsync(_sourceHttpUrl, new ByteArrayContent(newBundle));
 				StatusLabel.Text = resp.IsSuccessStatusCode ? "Uploaded." : $"Upload failed: {(int)resp.StatusCode}.";
+				wroteToKnownSource = resp.IsSuccessStatusCode;
 			}
 			else if (_isNewBundle)
 			{
@@ -1161,6 +1151,10 @@ public partial class MainPage : ContentPage
 		_editingPath = null;
 		RefreshFileList();
 		UpdateDirtyUi();
+		// A save back to a known source refreshes the vault row (count/date).
+		// A share-sheet export reports no destination, so it can't be recorded.
+		if (wroteToKnownSource)
+			RecordCurrentBundle();
 	}
 
 	private async void OnUploadClicked(object? sender, EventArgs e)
@@ -1351,6 +1345,8 @@ public partial class MainPage : ContentPage
 		_isNewBundle = false;
 		_editingPath = null;
 		_textEditor = null;
+		_currentBadgeMethod = "Layered";
+		_currentBookmarkB64 = "";
 #endif
 		PreviewContainer.Content = new Label { Text = "Select a file to preview.", HorizontalOptions = LayoutOptions.Center, VerticalOptions = LayoutOptions.Center };
 		StatusLabel.Text = "No bundle open.";
@@ -1363,5 +1359,371 @@ public partial class MainPage : ContentPage
 	{
 		SessionManager.Instance.Lock();
 		ResetPreviewUi();
+		ShowVault();
 	}
+
+	/// <summary>
+	/// Vault view switching: exactly one of the four views is visible.
+	/// </summary>
+	private void ShowVault()
+	{
+		VaultView.IsVisible = true;
+		BundleView.IsVisible = false;
+		ActivityView.IsVisible = false;
+		SettingsView.IsVisible = false;
+		LoadRecents(VaultSearchBar.Text);
+		SetActiveTab(VaultTabButton);
+		SyncVaultStatus();
+	}
+
+	private void ShowBundle()
+	{
+		VaultView.IsVisible = false;
+		BundleView.IsVisible = true;
+		ActivityView.IsVisible = false;
+		SettingsView.IsVisible = false;
+		SetActiveTab(VaultTabButton);
+	}
+
+	private void ShowActivity()
+	{
+		VaultView.IsVisible = false;
+		BundleView.IsVisible = false;
+		ActivityView.IsVisible = true;
+		SettingsView.IsVisible = false;
+		SetActiveTab(ActivityTabButton);
+	}
+
+	private void ShowSettings()
+	{
+		VaultView.IsVisible = false;
+		BundleView.IsVisible = false;
+		ActivityView.IsVisible = false;
+		SettingsView.IsVisible = true;
+		SetActiveTab(SettingsTabButton);
+	}
+
+	private void SetActiveTab(Button active)
+	{
+		foreach (var button in new[] { VaultTabButton, ActivityTabButton, NewTabButton, SettingsTabButton })
+		{
+			bool isActive = button == active;
+			button.TextColor = isActive ? Color.FromArgb("#FFFFFF") : Color.FromArgb("#A6A6A6");
+			button.FontAttributes = isActive ? FontAttributes.Bold : FontAttributes.None;
+		}
+	}
+
+	/// <summary>
+	/// The bundle view's status is the vault's status while the vault is
+	/// showing (e.g. an unlock failure after tapping a row).
+	/// </summary>
+	private void SyncVaultStatus()
+	{
+		VaultStatusLabel.Text = StatusLabel.Text;
+	}
+
+	private void LoadRecents(string? filter = null)
+	{
+		var recents = RecentBundleStore.Load();
+		if (!string.IsNullOrWhiteSpace(filter))
+		{
+			string f = filter.Trim();
+			recents = recents
+				.Where(r => r.Name.Contains(f, StringComparison.OrdinalIgnoreCase))
+				.ToList();
+		}
+		VaultListView.ItemsSource = recents;
+	}
+
+	private void OnSearchTextChanged(object? sender, TextChangedEventArgs e)
+	{
+		LoadRecents(e.NewTextValue);
+	}
+
+	/// <summary>
+	/// Leaving an open bundle for another tab discards staged changes, so
+	/// confirm first when dirty. Returns false when the user stays.
+	/// </summary>
+	private async Task<bool> ConfirmLeaveBundleAsync()
+	{
+		if (!BundleView.IsVisible)
+			return true;
+#if IOS
+		if (IsDirty)
+		{
+			return await DisplayAlert("Discard changes?",
+				"You have unsaved changes. Leave this bundle and discard them?",
+				"Discard", "Stay");
+		}
+#endif
+		return true;
+	}
+
+	private async void OnVaultTabClicked(object? sender, EventArgs e)
+	{
+		if (!BundleView.IsVisible)
+		{
+			ShowVault();
+			return;
+		}
+		if (!await ConfirmLeaveBundleAsync())
+			return;
+		CloseReader();
+	}
+
+	private async void OnActivityTabClicked(object? sender, EventArgs e)
+	{
+		if (BundleView.IsVisible)
+		{
+			if (!await ConfirmLeaveBundleAsync())
+				return;
+			CloseReader();
+		}
+		ShowActivity();
+	}
+
+	private async void OnSettingsTabClicked(object? sender, EventArgs e)
+	{
+		if (BundleView.IsVisible)
+		{
+			if (!await ConfirmLeaveBundleAsync())
+				return;
+			CloseReader();
+		}
+		ShowSettings();
+	}
+
+#if IOS
+	/// <summary>
+	/// Vault row tap: reopen through the existing open path. HTTP rows
+	/// re-download; Files rows resolve their security-scoped bookmark
+	/// (or fall back to the stored path) and open the bytes.
+	/// </summary>
+	private async void OnRecentSelected(object? sender, SelectionChangedEventArgs e)
+	{
+		if (e.CurrentSelection.FirstOrDefault() is not RecentBundle recent)
+			return;
+		VaultListView.SelectedItem = null;
+		await OpenRecentAsync(recent);
+	}
+
+	private async Task OpenRecentAsync(RecentBundle recent)
+	{
+		CloseReader();
+		if (recent.IsHttp)
+		{
+			await DownloadAndOpenAsync(recent.Source);
+			return;
+		}
+
+		byte[]? bytes = null;
+		NSUrl? url = ResolveBookmark(recent.BookmarkB64);
+		if (url is null && !string.IsNullOrEmpty(recent.Source))
+			url = NSUrl.FromFilename(recent.Source);
+		if (url is not null)
+		{
+			try
+			{
+				bool scoped = url.StartAccessingSecurityScopedResource();
+				try
+				{
+					using NSData? data = NSData.FromUrl(url);
+					bytes = data?.ToArray();
+				}
+				finally
+				{
+					if (scoped)
+						url.StopAccessingSecurityScopedResource();
+				}
+			}
+			catch
+			{
+				bytes = null;
+			}
+		}
+		if (bytes is null || bytes.Length == 0)
+		{
+			// Access expired (bookmark stale, file moved): fall back to
+			// the picker — the existing open path — instead of faking it.
+			VaultStatusLabel.Text = "Can't reopen that file — access expired. Pick it again.";
+			await OpenFromPickerAsync();
+			return;
+		}
+
+		_sourceFileUrl = url;
+		_sourceHttpUrl = null;
+		// SMB shares (via Files) are editable only if the user has write permission.
+		_isReadOnly = !IsUrlWritable(_sourceFileUrl);
+		await OpenBundleBytesAsync(bytes);
+	}
+
+	/// <summary>
+	/// The Files picker path, shared by the Open bundle button and by
+	/// vault rows whose stored access expired.
+	/// </summary>
+	private async Task OpenFromPickerAsync()
+	{
+		byte[]? bytes;
+		try
+		{
+			bytes = await BundleOpener.PickBundleAsync();
+		}
+		catch (Exception ex)
+		{
+			StatusLabel.Text = "Picker failed: " + ex.Message;
+			SyncVaultStatus();
+			return;
+		}
+		if (bytes is null)
+			return; // user cancelled
+
+		_sourceFileUrl = BundleOpener.LastPickedUrl;
+		_sourceHttpUrl = null;
+		// SMB shares (via Files) are editable only if the user has write permission.
+		_isReadOnly = !IsUrlWritable(_sourceFileUrl);
+		await OpenBundleBytesAsync(bytes);
+	}
+
+	/// <summary>
+	/// The HTTP download path, shared by the From URL button and by
+	/// vault rows for HTTP bundles (HTTP sources are read-only).
+	/// </summary>
+	private async Task DownloadAndOpenAsync(string url)
+	{
+		StatusLabel.Text = "Downloading…";
+		SyncVaultStatus();
+		byte[] bytes;
+		try
+		{
+			using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(60) };
+			bytes = await http.GetByteArrayAsync(url);
+		}
+		catch (Exception ex)
+		{
+			StatusLabel.Text = "Download failed: " + ex.Message;
+			SyncVaultStatus();
+			return;
+		}
+
+		_sourceFileUrl = null;
+		_sourceHttpUrl = url;
+		_isReadOnly = true; // HTTP sources are read-only
+		await OpenBundleBytesAsync(bytes);
+	}
+
+	/// <summary>
+	/// Records the currently open bundle in the vault list (newest first).
+	/// No-op for unsaved new bundles: with no source there is nothing
+	/// reopenable to record; they enter the list on their first save.
+	/// </summary>
+	private void RecordCurrentBundle()
+	{
+		string? name;
+		string? source;
+		bool isHttp;
+		if (_sourceHttpUrl is not null)
+		{
+			isHttp = true;
+			source = _sourceHttpUrl;
+			name = DisplayNameFromUrl(_sourceHttpUrl);
+		}
+		else if (_sourceFileUrl?.Path is not null)
+		{
+			isHttp = false;
+			source = _sourceFileUrl.Path;
+			name = DisplayNameFromFile(_sourceFileUrl.LastPathComponent);
+		}
+		else
+		{
+			return;
+		}
+		var reader = SessionManager.Instance.Reader;
+		int count = reader.Files.Count;
+		DateTimeOffset modified = count > 0
+			? reader.Files.Max(f => f.ModifiedUtc)
+			: DateTimeOffset.UtcNow;
+		RecentBundleStore.Record(new RecentBundle
+		{
+			Name = name,
+			Source = source,
+			IsHttp = isHttp,
+			BookmarkB64 = _currentBookmarkB64,
+			BadgeMethod = _currentBadgeMethod,
+			FileCount = count,
+			ModifiedUtc = modified,
+		});
+	}
+
+	private static string DisplayNameFromFile(string? fileName)
+	{
+		if (string.IsNullOrEmpty(fileName))
+			return "Bundle";
+		if (fileName.EndsWith(".kfb", StringComparison.OrdinalIgnoreCase))
+			fileName = fileName[..^4];
+		return fileName;
+	}
+
+	private static string DisplayNameFromUrl(string url)
+	{
+		try
+		{
+			string last = url.TrimEnd('/').Split('/').Last();
+			if (last.EndsWith(".kfb", StringComparison.OrdinalIgnoreCase))
+				last = last[..^4];
+			return string.IsNullOrEmpty(last) ? url : last;
+		}
+		catch
+		{
+			return url;
+		}
+	}
+
+	/// <summary>
+	/// Captures a security-scoped bookmark for a picked Files URL so the
+	/// vault row can reopen it across launches. "" when it can't be made.
+	/// </summary>
+	private static string CreateBookmark(NSUrl? url)
+	{
+		if (url is null)
+			return "";
+		try
+		{
+			using NSData? data = url.CreateBookmarkData(
+				NSUrlBookmarkCreationOptions.WithSecurityScope, null, out NSError err);
+			if (data is null || err is not null)
+				return "";
+			return Convert.ToBase64String(data.ToArray());
+		}
+		catch
+		{
+			return "";
+		}
+	}
+
+	/// <summary>
+	/// Resolves a stored bookmark back to a security-scoped URL. Null
+	/// when the bookmark is missing, stale, or unresolvable — the caller
+	/// then falls back to the stored path and, failing that, the picker.
+	/// </summary>
+	private static NSUrl? ResolveBookmark(string bookmarkB64)
+	{
+		if (string.IsNullOrEmpty(bookmarkB64))
+			return null;
+		try
+		{
+			byte[] raw = Convert.FromBase64String(bookmarkB64);
+			using var data = NSData.FromArray(raw);
+			NSUrl? url = NSUrl.FromBookmarkData(data,
+				NSUrlBookmarkResolutionOptions.WithSecurityScope, null,
+				out bool stale, out NSError err);
+			if (url is null || err is not null || stale)
+				return null;
+			return url;
+		}
+		catch
+		{
+			return null;
+		}
+	}
+#endif
 }
