@@ -377,7 +377,7 @@ public static class PasskeyPrf
 			_tcs = tcs;
 		}
 
-		public override void DidCompleteWithAuthorization(ASAuthorizationController controller, ASAuthorization authorization)
+		public override void DidComplete(ASAuthorizationController controller, ASAuthorization authorization)
 		{
 			if (Interlocked.Exchange(ref _done, 1) != 0)
 				return;
@@ -395,7 +395,7 @@ public static class PasskeyPrf
 			}
 		}
 
-		public override void DidCompleteWithError(ASAuthorizationController controller, NSError error)
+		public override void DidComplete(ASAuthorizationController controller, NSError error)
 		{
 			if (Interlocked.Exchange(ref _done, 1) != 0)
 				return;
