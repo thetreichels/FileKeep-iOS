@@ -17,28 +17,25 @@ namespace FileKeep.Reader.iOS.Platforms.iOS;
 /// reproduces the same output on any synced device, so the output
 /// feeds HKDF into the bundle KEK (see <see cref="Core.Bundle.PasskeyKek"/>).
 ///
-/// The .NET iOS bindings (10.0.103) do NOT expose the PRF types
-/// (ASAuthorizationPublicKeyCredentialPRF*), so this class drives
-/// them through the ObjC runtime: the provider, requests, and
-/// controller come from the bound AuthenticationServices API, and
-/// only the PRF input objects and the `prf` property go through
-/// objc_msgSend. The ObjC shapes below were verified against real
-/// code that calls them (Chromium's iCloud Keychain implementation
-/// and react-native-passkeys), not written from memory:
-///   - ASAuthorizationPublicKeyCredentialPRFRegistrationInputValues
-///     initWithSaltInput1:saltInput2:
-///   - ASAuthorizationPublicKeyCredentialPRFRegistrationInput
-///     +checkForSupport, -initWithInputValues:
-///   - ASAuthorizationPublicKeyCredentialPRFAssertionInputValues
-///     initWithSaltInput1:saltInput2:
-///   - ASAuthorizationPublicKeyCredentialPRFAssertionInput
-///     -initWithInputValues:perCredentialInputValues:
-///   - request.prf (setter setPrf:), credential.prf, .isSupported,
-///     .first, .second.
+/// The .NET iOS bindings DO expose the PRF types (since iOS 18 /
+/// .NET 9): ASAuthorizationPublicKeyCredentialPrf* input/output
+/// classes, the `Prf` property on the platform requests and on the
+/// platform credentials, and ASAuthorizationPlatformPublicKeyCredentialDescriptor.
+/// This class uses those bound types directly — no ObjC-runtime
+/// message dispatch, no internal `Messaging` class. (An earlier
+/// version of this file drove PRF through objc_msgSend because the
+/// bindings were believed not to expose it; that was wrong, and CI
+/// #201 proved it — the bindings have had the PRF surface since the
+/// release/9.0.1xx branch.)
 ///
-/// Every handle created here is checked for null and every failure
-/// reports loudly — a missing PRF result must never silently
-/// produce a bundle that can't unlock.
+/// The one exception: ASAuthorization exposes its credential only as
+/// an internal handle in the bindings, so the completed credential
+/// is read through the public NSObject `performSelector:` for the
+/// `credential` getter, then matched with `is` against the bound
+/// platform credential classes.
+///
+/// Every failure reports loudly — a missing PRF result must never
+/// silently produce a bundle that can't unlock.
 ///
 /// Honest limit: the app must be signed with the Associated Domains
 /// entitlement (webcredentials:treichel.co) for the ceremony to run.
@@ -127,9 +124,9 @@ public static class PasskeyPrf
 
 			// Attach the PRF input: evaluating the salt at creation both
 			// enables PRF on the credential and returns the first output.
-			IntPtr prfInput = CreateRegistrationPrfInput(saltData.Handle);
-			Messaging.void_objc_msgSend_IntPtr(request.Handle, Selector.GetHandle("setPrf:"), prfInput);
-			Messaging.void_objc_msgSend(prfInput, Selector.GetHandle("release"));
+			// The request retains the input; the controller retains the
+			// request for the life of the ceremony.
+			request.Prf = CreateRegistrationPrfInput(saltData);
 
 			var controller = new ASAuthorizationController(new[] { request });
 			var del = new ControllerDelegate(tcs);
@@ -182,12 +179,12 @@ public static class PasskeyPrf
 			var provider = new ASAuthorizationPlatformPublicKeyCredentialProvider(RelyingPartyId);
 			var request = provider.CreateCredentialAssertionRequest(challengeData);
 
-			var descriptor = new ASAuthorizationPublicKeyCredentialDescriptor(credentialIdData);
-			request.AllowedCredentials = new[] { descriptor };
+			var descriptor = new ASAuthorizationPlatformPublicKeyCredentialDescriptor(credentialIdData);
+			request.PlatformAllowedCredentials = new[] { descriptor };
 
-			IntPtr prfInput = CreateAssertionPrfInput(saltData.Handle);
-			Messaging.void_objc_msgSend_IntPtr(request.Handle, Selector.GetHandle("setPrf:"), prfInput);
-			Messaging.void_objc_msgSend(prfInput, Selector.GetHandle("release"));
+			// Attach the PRF input for eval mode. The request retains
+			// the input; the controller retains the request.
+			request.Prf = CreateAssertionPrfInput(saltData);
 
 			var controller = new ASAuthorizationController(new[] { request });
 			var del = new ControllerDelegate(tcs);
@@ -225,73 +222,25 @@ public static class PasskeyPrf
 	}
 
 	/// <summary>
-	/// Builds a registration PRF input for one salt. Returns a +1
-	/// reference; the caller releases it after setPrf: retains it.
+	/// Builds a registration PRF input for one salt, using the bound
+	/// PRF types (iOS 18+). The request retains the input.
 	/// </summary>
-	private static IntPtr CreateRegistrationPrfInput(IntPtr saltDataHandle)
+	private static ASAuthorizationPublicKeyCredentialPrfRegistrationInput CreateRegistrationPrfInput(NSData saltData)
 	{
-		IntPtr valuesClass = Class.GetHandle("ASAuthorizationPublicKeyCredentialPRFRegistrationInputValues");
-		if (valuesClass == IntPtr.Zero)
-			throw new InvalidOperationException("This iOS version has no PRF registration API.");
-		IntPtr valuesAlloc = Messaging.IntPtr_objc_msgSend(valuesClass, Selector.GetHandle("alloc"));
-		IntPtr values = Messaging.IntPtr_objc_msgSend_IntPtr_IntPtr(valuesAlloc,
-			Selector.GetHandle("initWithSaltInput1:saltInput2:"), saltDataHandle, IntPtr.Zero);
-		if (values == IntPtr.Zero)
-			throw new InvalidOperationException("Couldn't build the PRF input values.");
-		try
-		{
-			IntPtr inputClass = Class.GetHandle("ASAuthorizationPublicKeyCredentialPRFRegistrationInput");
-			if (inputClass == IntPtr.Zero)
-				throw new InvalidOperationException("This iOS version has no PRF registration API.");
-			IntPtr inputAlloc = Messaging.IntPtr_objc_msgSend(inputClass, Selector.GetHandle("alloc"));
-			IntPtr input = Messaging.IntPtr_objc_msgSend_IntPtr(inputAlloc,
-				Selector.GetHandle("initWithInputValues:"), values);
-			if (input == IntPtr.Zero)
-				throw new InvalidOperationException("Couldn't build the PRF input.");
-			return input;
-		}
-		finally
-		{
-			// initWithInputValues: retained the values; drop our +1.
-			Messaging.void_objc_msgSend(values, Selector.GetHandle("release"));
-		}
+		var values = new ASAuthorizationPublicKeyCredentialPrfAssertionInputValues(saltData, null);
+		return new ASAuthorizationPublicKeyCredentialPrfRegistrationInput(values);
 	}
 
 	/// <summary>
-	/// Builds an assertion PRF input for one salt (eval mode).
-	/// Returns a +1 reference; the caller releases it after setPrf:
-	/// retains it. The per-credential map is empty — the credential
-	/// is already targeted via allowedCredentials.
+	/// Builds an assertion PRF input for one salt (eval mode), using
+	/// the bound PRF types (iOS 18+). The per-credential map is nil —
+	/// the credential is already targeted via allowedCredentials. The
+	/// request retains the input.
 	/// </summary>
-	private static IntPtr CreateAssertionPrfInput(IntPtr saltDataHandle)
+	private static ASAuthorizationPublicKeyCredentialPrfAssertionInput CreateAssertionPrfInput(NSData saltData)
 	{
-		IntPtr valuesClass = Class.GetHandle("ASAuthorizationPublicKeyCredentialPRFAssertionInputValues");
-		if (valuesClass == IntPtr.Zero)
-			throw new InvalidOperationException("This iOS version has no PRF assertion API.");
-		IntPtr valuesAlloc = Messaging.IntPtr_objc_msgSend(valuesClass, Selector.GetHandle("alloc"));
-		IntPtr values = Messaging.IntPtr_objc_msgSend_IntPtr_IntPtr(valuesAlloc,
-			Selector.GetHandle("initWithSaltInput1:saltInput2:"), saltDataHandle, IntPtr.Zero);
-		if (values == IntPtr.Zero)
-			throw new InvalidOperationException("Couldn't build the PRF input values.");
-		try
-		{
-			IntPtr inputClass = Class.GetHandle("ASAuthorizationPublicKeyCredentialPRFAssertionInput");
-			if (inputClass == IntPtr.Zero)
-				throw new InvalidOperationException("This iOS version has no PRF assertion API.");
-			IntPtr inputAlloc = Messaging.IntPtr_objc_msgSend(inputClass, Selector.GetHandle("alloc"));
-			using var emptyPerCredential = new NSMutableDictionary();
-			IntPtr input = Messaging.IntPtr_objc_msgSend_IntPtr_IntPtr(inputAlloc,
-				Selector.GetHandle("initWithInputValues:perCredentialInputValues:"), values, emptyPerCredential.Handle);
-			if (input == IntPtr.Zero)
-				throw new InvalidOperationException("Couldn't build the PRF input.");
-			return input;
-		}
-		finally
-		{
-			// initWithInputValues:perCredentialInputValues: retained
-			// the values; drop our +1.
-			Messaging.void_objc_msgSend(values, Selector.GetHandle("release"));
-		}
+		var values = new ASAuthorizationPublicKeyCredentialPrfAssertionInputValues(saltData, null);
+		return new ASAuthorizationPublicKeyCredentialPrfAssertionInput(values, null);
 	}
 
 	private static void ClearCurrent(ControllerDelegate del)
@@ -308,9 +257,15 @@ public static class PasskeyPrf
 	/// </summary>
 	private static CeremonyOutcome ReadAuthorization(ASAuthorization authorization)
 	{
-		if (authorization.Credential is ASAuthorizationPlatformPublicKeyCredentialRegistration reg)
+		// ASAuthorization exposes its credential only as an internal
+		// handle in the bindings, so read it through the public
+		// NSObject performSelector: for the `credential` getter.
+		// The returned object is the platform registration or
+		// assertion credential; the `is` checks below match it.
+		NSObject? credentialObj = authorization.PerformSelector(new Selector("credential"));
+		if (credentialObj is ASAuthorizationPlatformPublicKeyCredentialRegistration reg)
 		{
-			byte[]? credentialId = reg.CredentialID?.ToArray();
+			byte[]? credentialId = reg.CredentialId?.ToArray();
 			if (credentialId is null || credentialId.Length == 0)
 				return new CeremonyOutcome(null, null, "Passkey didn't return a credential ID.", false);
 			(byte[]? prf, string? prfError) = ReadRegistrationPrf(reg);
@@ -318,12 +273,12 @@ public static class PasskeyPrf
 				return new CeremonyOutcome(null, null, prfError, false);
 			return new CeremonyOutcome(credentialId, prf, null, false);
 		}
-		if (authorization.Credential is ASAuthorizationPlatformPublicKeyCredentialAssertion ass)
+		if (credentialObj is ASAuthorizationPlatformPublicKeyCredentialAssertion ass)
 		{
 			(byte[]? prf, string? prfError) = ReadAssertionPrf(ass);
 			if (prf is null)
 				return new CeremonyOutcome(null, null, prfError, false);
-			byte[]? credentialId = ass.CredentialID?.ToArray();
+			byte[]? credentialId = ass.CredentialId?.ToArray();
 			return new CeremonyOutcome(credentialId, prf, null, false);
 		}
 		return new CeremonyOutcome(null, null, "Passkey returned an unexpected credential type.", false);
@@ -332,33 +287,31 @@ public static class PasskeyPrf
 	private static (byte[]? PrfOutput, string? Error) ReadRegistrationPrf(
 		ASAuthorizationPlatformPublicKeyCredentialRegistration credential)
 	{
-		IntPtr prfHandle = Messaging.IntPtr_objc_msgSend(credential.Handle, Selector.GetHandle("prf"));
-		if (prfHandle == IntPtr.Zero)
+		ASAuthorizationPublicKeyCredentialPrfRegistrationOutput? prf = credential.Prf;
+		if (prf is null)
 			return (null, "Passkey didn't return a PRF result — PRF may not be enabled on this credential.");
-		bool supported = Messaging.bool_objc_msgSend(prfHandle, Selector.GetHandle("isSupported"));
-		if (!supported)
+		if (!prf.IsSupported)
 			return (null, "This passkey doesn't support PRF.");
-		return ReadPrfFirst(prfHandle);
+		return ReadPrfFirst(prf.First);
 	}
 
 	private static (byte[]? PrfOutput, string? Error) ReadAssertionPrf(
 		ASAuthorizationPlatformPublicKeyCredentialAssertion credential)
 	{
-		IntPtr prfHandle = Messaging.IntPtr_objc_msgSend(credential.Handle, Selector.GetHandle("prf"));
-		if (prfHandle == IntPtr.Zero)
+		ASAuthorizationPublicKeyCredentialPrfAssertionOutput? prf = credential.Prf;
+		if (prf is null)
 			return (null, "Passkey didn't return a PRF result.");
-		return ReadPrfFirst(prfHandle);
+		return ReadPrfFirst(prf.First);
 	}
 
-	private static (byte[]? PrfOutput, string? Error) ReadPrfFirst(IntPtr prfHandle)
+	private static (byte[]? PrfOutput, string? Error) ReadPrfFirst(NSData? first)
 	{
-		IntPtr firstHandle = Messaging.IntPtr_objc_msgSend(prfHandle, Selector.GetHandle("first"));
-		if (firstHandle == IntPtr.Zero)
+		if (first is null)
 			return (null, "Passkey didn't return a PRF output.");
-		byte[] first = Runtime.GetNSObject<NSData>(firstHandle).ToArray();
-		if (first.Length != PrfOutputSizeBytes)
+		byte[] bytes = first.ToArray();
+		if (bytes.Length != PrfOutputSizeBytes)
 			return (null, "Passkey returned a bad PRF output.");
-		return (first, null);
+		return (bytes, null);
 	}
 
 	/// <summary>
