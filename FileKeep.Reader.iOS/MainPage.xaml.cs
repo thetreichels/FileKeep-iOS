@@ -107,8 +107,10 @@ public partial class MainPage : ContentPage
 		}
 
 		// Step 3: Set up each method, collect KEKs and wrap metadata.
+		// Tuples: (type, kek, salt, iterations, slot, challenge,
+		// prfSalt, credentialId).
 		StatusLabel.Text = "Setting up unlock methods…";
-		var wrapInfos = new List<(string Type, byte[] Kek, byte[]? Salt, int? Iterations, int? Slot, byte[]? Challenge)>();
+		var wrapInfos = new List<(string Type, byte[] Kek, byte[]? Salt, int? Iterations, int? Slot, byte[]? Challenge, byte[]? PrfSalt, byte[]? CredentialId)>();
 		try
 		{
 			foreach (var method in methods)
@@ -130,7 +132,7 @@ public partial class MainPage : ContentPage
 					{
 						Array.Clear(passphrase);
 					}
-					wrapInfos.Add(("passphrase", kek, salt, iterations, null, null));
+					wrapInfos.Add(("passphrase", kek, salt, iterations, null, null, null, null));
 				}
 				else if (method == "yubikey-hmac-sha1")
 				{
@@ -145,7 +147,28 @@ public partial class MainPage : ContentPage
 						CryptographicOperations.ZeroMemory(challenge);
 						return;
 					}
-					wrapInfos.Add(("yubikey-hmac-sha1", result.Kek, null, null, slot, challenge));
+					wrapInfos.Add(("yubikey-hmac-sha1", result.Kek, null, null, slot, challenge, null, null));
+				}
+				else if (method == "passkey-prf")
+				{
+					// Fresh 32-byte PRF salt. The ceremony enables PRF
+					// on the new passkey and evaluates the salt right
+					// away, returning the 32-byte PRF output directly.
+					byte[] prfSalt = RandomNumberGenerator.GetBytes(32);
+					StatusLabel.Text = "Use your passkey…";
+					PasskeyPrf.CreateResult pk = await PasskeyPrf.CreateCredentialAsync(prfSalt);
+					if (pk.PrfOutput is null || pk.CredentialId is null)
+					{
+						StatusLabel.Text = pk.Error ?? (pk.Cancelled
+							? "Passkey creation cancelled."
+							: "Passkey setup failed.");
+						return;
+					}
+					byte[] kek = PasskeyKek.Derive(pk.PrfOutput);
+					// PRF output is single-use key material — zero it
+					// as soon as the KEK is derived.
+					CryptographicOperations.ZeroMemory(pk.PrfOutput);
+					wrapInfos.Add(("passkey-prf", kek, null, null, null, null, prfSalt, pk.CredentialId));
 				}
 			}
 
@@ -163,12 +186,14 @@ public partial class MainPage : ContentPage
 					{
 						for (int i = 0; i < wrapInfos.Count; i++)
 						{
-							var (type, kek, salt, iterations, slot, challenge) = wrapInfos[i];
+							var (type, kek, salt, iterations, slot, challenge, prfSalt, credentialId) = wrapInfos[i];
 							var wrap = BundleReader.CreateWrap(
 								type, kek, shares[i],
 								mode: "and", group: "g1",
 								salt: salt, iterations: iterations,
-								slot: slot, challenge: challenge);
+								slot: slot, challenge: challenge,
+								prfSalt: prfSalt, credentialId: credentialId,
+								rpId: type == "passkey-prf" ? PasskeyPrf.RelyingPartyId : null);
 							wraps.Add(wrap);
 						}
 					}
@@ -181,12 +206,14 @@ public partial class MainPage : ContentPage
 				else
 				{
 					// OR: each wrap holds the full DEK.
-					foreach (var (type, kek, salt, iterations, slot, challenge) in wrapInfos)
+					foreach (var (type, kek, salt, iterations, slot, challenge, prfSalt, credentialId) in wrapInfos)
 					{
 						var wrap = BundleReader.CreateWrap(
 							type, kek, dek,
 							salt: salt, iterations: iterations,
-							slot: slot, challenge: challenge);
+							slot: slot, challenge: challenge,
+							prfSalt: prfSalt, credentialId: credentialId,
+							rpId: type == "passkey-prf" ? PasskeyPrf.RelyingPartyId : null);
 						wraps.Add(wrap);
 					}
 				}
@@ -225,7 +252,7 @@ public partial class MainPage : ContentPage
 		}
 		finally
 		{
-			foreach (var (_, kek, _, _, _, challenge) in wrapInfos)
+			foreach (var (_, kek, _, _, _, challenge, _, _) in wrapInfos)
 			{
 				CryptographicOperations.ZeroMemory(kek);
 				if (challenge is not null)
@@ -333,6 +360,22 @@ public partial class MainPage : ContentPage
 			{
 				CryptographicOperations.ZeroMemory(dek);
 			}
+		}
+
+		// Passkey is offered whenever the bundle carries a passkey
+		// wrap, before the YubiKey offer. A passkey-only bundle has
+		// no passphrase fallback: a failed passkey attempt ends the
+		// cascade (the status text already explains why). Multi-wrap
+		// bundles route through the LayerPicker above, not here.
+		if (BundleReader.TryGetPasskeyWrap(bytes, out BundleWrap? pkWrap) && pkWrap is not null)
+		{
+			BundleReader? pkReader = await UnlockWithPasskeyAsync(bytes, pkWrap);
+			if (pkReader is not null)
+			{
+				EnrollFaceId(fingerprint, pkReader);
+				return pkReader;
+			}
+			return null; // passkey failed; status text explains why
 		}
 
 		BundleWrap? ykWrap = null;
@@ -446,6 +489,14 @@ public partial class MainPage : ContentPage
 			return reader;
 		}
 
+		if (string.Equals(wrap.Type, "passkey-prf", StringComparison.OrdinalIgnoreCase))
+		{
+			var reader = await UnlockWithPasskeyAsync(bytes, wrap);
+			if (reader is not null)
+				EnrollFaceId(fingerprint, reader);
+			return reader;
+		}
+
 		// Default to passphrase flow.
 		char[]? passphrase = await SecurePrompt.PromptAsync("Unlock bundle", "Export passphrase:");
 		if (passphrase is null || passphrase.Length == 0)
@@ -537,7 +588,8 @@ public partial class MainPage : ContentPage
 		{
 			"passphrase" => await GetPassphraseKekAsync(wrap),
 			"yubikey-hmac-sha1" => await GetYubiKeyKekAsync(wrap),
-			_ => null, // unsupported method (e.g. passkey-prf not yet implemented)
+			"passkey-prf" => await GetPasskeyKekAsync(wrap),
+			_ => null, // unsupported method
 		};
 	}
 
@@ -599,6 +651,61 @@ public partial class MainPage : ContentPage
 		}
 	}
 
+	private async Task<byte[]?> GetPasskeyKekAsync(BundleWrap wrap)
+	{
+		if (!PasskeyPrf.IsAvailable())
+		{
+			StatusLabel.Text = "Passkeys need iOS 18 or later on this device.";
+			return null;
+		}
+		if (wrap.RpId is not null &&
+			!string.Equals(wrap.RpId, PasskeyPrf.RelyingPartyId, StringComparison.OrdinalIgnoreCase))
+		{
+			StatusLabel.Text = "This bundle's passkey belongs to a different domain.";
+			return null;
+		}
+		byte[] prfSalt;
+		byte[] credentialId;
+		try
+		{
+			prfSalt = Convert.FromBase64String(wrap.PrfSaltB64
+				?? throw new InvalidDataException("Passkey wrap is missing its PRF salt."));
+			credentialId = Convert.FromBase64String(wrap.CredentialIdB64
+				?? throw new InvalidDataException("Passkey wrap is missing its credential ID."));
+		}
+		catch
+		{
+			StatusLabel.Text = "Passkey wrap is missing its salt or credential ID.";
+			return null;
+		}
+		try
+		{
+			PasskeyPrf.EvaluateResult result = await PasskeyPrf.EvaluatePrfAsync(credentialId, prfSalt);
+			if (result.Cancelled)
+				return null; // user cancelled
+			if (result.PrfOutput is null)
+			{
+				StatusLabel.Text = result.Error ?? "Passkey didn't respond. Try again.";
+				return null;
+			}
+			try
+			{
+				// EvaluatePrfAsync returns the derived KEK's input;
+				// derive the KEK and zero the PRF output immediately.
+				return PasskeyKek.Derive(result.PrfOutput);
+			}
+			finally
+			{
+				CryptographicOperations.ZeroMemory(result.PrfOutput);
+			}
+		}
+		catch (Exception ex)
+		{
+			StatusLabel.Text = "Passkey failed: " + ex.Message;
+			return null;
+		}
+	}
+
 	/// <summary>
 	/// YubiKey path: NFC challenge-response against the wrap's slot and
 	/// challenge, KEK per DESIGN.md §3.2, open the bundle. Returns null
@@ -649,6 +756,40 @@ public partial class MainPage : ContentPage
 		catch (CryptographicException)
 		{
 			StatusLabel.Text = "This YubiKey didn't open the bundle (wrong key or slot).";
+			return null;
+		}
+		catch (Exception ex)
+		{
+			StatusLabel.Text = "Couldn't open bundle: " + ex.Message;
+			return null;
+		}
+	}
+
+	/// <summary>
+	/// Passkey path: PRF assertion against the wrap's credential ID
+	/// and salt, KEK per PasskeyKek, open the bundle. Returns null
+	/// when the ceremony is cancelled or the passkey doesn't answer
+	/// (status text explains why). Mirrors UnlockWithYubiKeyAsync.
+	/// </summary>
+	private async Task<BundleReader?> UnlockWithPasskeyAsync(byte[] bytes, BundleWrap pkWrap)
+	{
+		byte[]? kek = await GetPasskeyKekAsync(pkWrap);
+		if (kek is null)
+			return null; // cancelled or failed; status text explains why
+		try
+		{
+			try
+			{
+				return await Task.Run(() => BundleReader.OpenWithPasskey(bytes, kek));
+			}
+			finally
+			{
+				CryptographicOperations.ZeroMemory(kek);
+			}
+		}
+		catch (CryptographicException)
+		{
+			StatusLabel.Text = "This passkey didn't open the bundle.";
 			return null;
 		}
 		catch (Exception ex)

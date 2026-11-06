@@ -11,11 +11,14 @@ public static class NewBundlePicker
 {
 	/// <summary>
 	/// Asks which methods to use for the new bundle. Returns the list
-	/// of method types (e.g. ["passphrase", "yubikey-hmac-sha1"]), or
-	/// null if the user cancels. Always returns at least one method.
-	/// Both methods are always offered; if this device can't do NFC,
-	/// the YubiKey setup fails loudly at tap time instead of the
-	/// option being silently hidden.
+	/// of method types (e.g. ["passphrase", "yubikey-hmac-sha1",
+	/// "passkey-prf"]), or null if the user cancels. Always returns
+	/// at least one method. Passphrase and YubiKey are always offered;
+	/// if this device can't do NFC, the YubiKey setup fails loudly at
+	/// tap time instead of the option being silently hidden. Passkey
+	/// is offered only when this device can do PRF (iOS 18+, real
+	/// device) — a passkey created without PRF could never unlock, so
+	/// that option is hidden instead of failing at tap time.
 	/// </summary>
 	public static async Task<List<string>?> PickMethodsAsync()
 	{
@@ -38,6 +41,17 @@ public static class NewBundlePicker
 			return null; // cancelled
 		if (useYubiKey == true)
 			methods.Add("yubikey-hmac-sha1");
+
+		// Passkey: offered only when this device can do PRF.
+		if (PasskeyPrf.IsAvailable())
+		{
+			bool? usePasskey = await AskYesNoAsync(
+				"New bundle", "Use a passkey to unlock?");
+			if (usePasskey is null)
+				return null; // cancelled
+			if (usePasskey == true)
+				methods.Add("passkey-prf");
+		}
 
 		if (methods.Count == 0)
 		{

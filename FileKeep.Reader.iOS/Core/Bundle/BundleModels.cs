@@ -26,7 +26,8 @@ public sealed class BundleHeader
 
 /// <summary>
 /// One way to unwrap the bundle's DEK. Each wrap independently yields
-/// the same 32-byte DEK. Types: "passphrase", "yubikey-hmac-sha1".
+/// the same 32-byte DEK. Types: "passphrase", "yubikey-hmac-sha1",
+/// "passkey-prf".
 /// </summary>
 public sealed class BundleWrap
 {
@@ -58,6 +59,17 @@ public sealed class BundleWrap
 	[JsonPropertyName("prf_salt_b64")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string? PrfSaltB64 { get; set; }
+
+	// Passkey wrap only: the credential ID of the passkey to assert
+	// against, and the relying-party domain it was created under.
+	// The reader targets this exact credential.
+	[JsonPropertyName("credential_id_b64")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? CredentialIdB64 { get; set; }
+
+	[JsonPropertyName("rp_id")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? RpId { get; set; }
 
 	// Layering: "or" (default) — any OR wrap unlocks alone.
 	// "and" — this wrap holds one XOR share; all wraps in the same

@@ -256,7 +256,8 @@ public sealed class BundleReader : IDisposable
 	/// Creates a new BundleWrap by AES-256-GCM encrypting the given plaintext
 	/// (a DEK or a share) with the KEK. Used when creating new bundles.
 	/// The caller supplies method-specific fields (salt/iterations for
-	/// passphrase, slot/challenge for YubiKey).
+	/// passphrase, slot/challenge for YubiKey, prfSalt/credentialId/rpId
+	/// for passkey).
 	/// </summary>
 	public static BundleWrap CreateWrap(
 		string type,
@@ -267,7 +268,10 @@ public sealed class BundleReader : IDisposable
 		byte[]? salt = null,
 		int? iterations = null,
 		int? slot = null,
-		byte[]? challenge = null)
+		byte[]? challenge = null,
+		byte[]? prfSalt = null,
+		byte[]? credentialId = null,
+		string? rpId = null)
 	{
 		ArgumentNullException.ThrowIfNull(kek);
 		ArgumentNullException.ThrowIfNull(plaintext);
@@ -286,6 +290,9 @@ public sealed class BundleReader : IDisposable
 			Iterations = iterations,
 			Slot = slot,
 			ChallengeB64 = challenge is not null ? Convert.ToBase64String(challenge) : null,
+			PrfSaltB64 = prfSalt is not null ? Convert.ToBase64String(prfSalt) : null,
+			CredentialIdB64 = credentialId is not null ? Convert.ToBase64String(credentialId) : null,
+			RpId = rpId,
 			NonceB64 = Convert.ToBase64String(nonce),
 			DataB64 = Convert.ToBase64String(data),
 		};

@@ -12,5 +12,13 @@
 	<array>
 		<string>A000000527200101</string>
 	</array>
+	<!-- Associated Domains for passkey PRF (RP ID treichel.co).
+	     ?mode=developer: the phone fetches the AASA file direct from
+	     treichel.co, bypassing Apple's CDN cache. Remove the flag
+	     before any App Store submission. -->
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>webcredentials:treichel.co?mode=developer</string>
+	</array>
 </dict>
 </plist>
