@@ -52,6 +52,14 @@ public static class PasskeyPrf
 	/// <summary>PRF outputs are always 32 bytes.</summary>
 	public const int PrfOutputSizeBytes = 32;
 
+	/// <summary>
+	/// How long a ceremony may run before it is declared dead. The
+	/// system never answers when the app isn't associated with the
+	/// domain (missing Associated Domains entitlement), and without a
+	/// timeout the await hangs forever with no error.
+	/// </summary>
+	private static readonly TimeSpan CeremonyTimeout = TimeSpan.FromSeconds(60);
+
 	/// <summary>Result of creating a passkey with PRF enabled.</summary>
 	public sealed record CreateResult(byte[]? CredentialId, byte[]? PrfOutput, string? Error, bool Cancelled);
 
@@ -111,6 +119,7 @@ public static class PasskeyPrf
 			tcs.SetResult(new CeremonyOutcome(null, null, "A passkey request is already running.", false));
 			return ToCreateResultAsync(tcs.Task);
 		}
+		ControllerDelegate? del = null;
 		try
 		{
 			byte[] challenge = RandomNumberGenerator.GetBytes(32);
@@ -129,7 +138,7 @@ public static class PasskeyPrf
 			request.Prf = CreateRegistrationPrfInput(saltData);
 
 			var controller = new ASAuthorizationController(new[] { request });
-			var del = new ControllerDelegate(tcs);
+			del = new ControllerDelegate(tcs);
 			controller.Delegate = del;
 			controller.PresentationContextProvider = del;
 			s_current = new Ceremony { Controller = controller, Delegate = del, Completion = tcs };
@@ -140,7 +149,7 @@ public static class PasskeyPrf
 			s_current = null;
 			tcs.TrySetResult(new CeremonyOutcome(null, null, "Passkey failed: " + ex.Message, false));
 		}
-		return ToCreateResultAsync(tcs.Task);
+		return ToCreateResultAsync(WaitForCeremonyAsync(tcs.Task, del));
 	}
 
 	/// <summary>
@@ -169,6 +178,7 @@ public static class PasskeyPrf
 			tcs.SetResult(new CeremonyOutcome(null, null, "A passkey request is already running.", false));
 			return ToEvaluateResultAsync(tcs.Task);
 		}
+		ControllerDelegate? del = null;
 		try
 		{
 			byte[] challenge = RandomNumberGenerator.GetBytes(32);
@@ -187,7 +197,7 @@ public static class PasskeyPrf
 			request.Prf = CreateAssertionPrfInput(saltData);
 
 			var controller = new ASAuthorizationController(new[] { request });
-			var del = new ControllerDelegate(tcs);
+			del = new ControllerDelegate(tcs);
 			controller.Delegate = del;
 			controller.PresentationContextProvider = del;
 			s_current = new Ceremony { Controller = controller, Delegate = del, Completion = tcs };
@@ -198,7 +208,7 @@ public static class PasskeyPrf
 			s_current = null;
 			tcs.TrySetResult(new CeremonyOutcome(null, null, "Passkey failed: " + ex.Message, false));
 		}
-		return ToEvaluateResultAsync(tcs.Task);
+		return ToEvaluateResultAsync(WaitForCeremonyAsync(tcs.Task, del));
 	}
 
 	private static async Task<CreateResult> ToCreateResultAsync(Task<CeremonyOutcome> task)
@@ -211,6 +221,26 @@ public static class PasskeyPrf
 	{
 		CeremonyOutcome o = await task.ConfigureAwait(false);
 		return new EvaluateResult(o.PrfOutput, o.Error, o.Cancelled);
+	}
+
+	/// <summary>
+	/// Awaits a ceremony outcome, failing loudly if the system never
+	/// answers within <see cref="CeremonyTimeout"/>. On timeout the
+	/// current ceremony is cleared so a stuck request doesn't block
+	/// later attempts; a late delegate callback stays harmless (the
+	/// delegate's single-completion flag + TrySetResult ignore it).
+	/// </summary>
+	private static async Task<CeremonyOutcome> WaitForCeremonyAsync(
+		Task<CeremonyOutcome> task, ControllerDelegate? del)
+	{
+		Task completed = await Task.WhenAny(task, Task.Delay(CeremonyTimeout)).ConfigureAwait(false);
+		if (completed == task)
+			return await task.ConfigureAwait(false);
+		if (del is not null)
+			ClearCurrent(del);
+		return new CeremonyOutcome(null, null,
+			"Passkey didn't respond — the system never answered the request. " +
+			"This happens when the app isn't associated with treichel.co (missing Associated Domains entitlement).", false);
 	}
 
 	private static void PerformOnMainThread(ASAuthorizationController controller)

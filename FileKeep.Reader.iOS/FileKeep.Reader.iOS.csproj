@@ -12,7 +12,7 @@
 
     <ApplicationTitle>FileKeep Reader</ApplicationTitle>
     <ApplicationId>com.filekeep.reader</ApplicationId>
-    <ApplicationDisplayVersion>0.0.5</ApplicationDisplayVersion>
+    <ApplicationDisplayVersion>0.0.6</ApplicationDisplayVersion>
     <ApplicationVersion>1</ApplicationVersion>
 
     <CodesignEntitlements Condition="'$(RuntimeIdentifier)' != 'iossimulator-arm64'">Platforms/iOS/Entitlements.plist</CodesignEntitlements>
