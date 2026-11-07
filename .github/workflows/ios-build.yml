@@ -53,6 +53,22 @@ jobs:
           sudo xcodebuild -license accept || true
           xcodebuild -version
 
+      - name: Build smb-ffi static libraries
+        shell: bash
+        run: |
+          # macos-15 runners ship Rust 1.98.0 + rustup 1.29.0 preinstalled;
+          # only the iOS targets need adding. Xcode was already selected
+          # by the "Select Xcode" step above — cargo needs it set before
+          # it runs so rustc finds the right SDKs. The .a files are CI
+          # artifacts (never committed); the csproj references them per
+          # RuntimeIdentifier via NativeReference.
+          rustup target add aarch64-apple-ios aarch64-apple-ios-sim
+          export IPHONEOS_DEPLOYMENT_TARGET=17.0
+          cargo build --release --target aarch64-apple-ios --manifest-path FileKeep.Reader.iOS/Rust/smb-ffi/Cargo.toml
+          cargo build --release --target aarch64-apple-ios-sim --manifest-path FileKeep.Reader.iOS/Rust/smb-ffi/Cargo.toml
+          ls -la FileKeep.Reader.iOS/Rust/smb-ffi/target/aarch64-apple-ios/release/libsmb_ffi.a
+          ls -la FileKeep.Reader.iOS/Rust/smb-ffi/target/aarch64-apple-ios-sim/release/libsmb_ffi.a
+
       - name: Reinstall MAUI workload
         shell: bash
         run: |

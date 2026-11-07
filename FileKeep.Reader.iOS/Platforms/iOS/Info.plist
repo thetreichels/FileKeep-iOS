@@ -7,7 +7,7 @@
 	<key>CFBundleIdentifier</key>
 	<string>com.filekeep.reader</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.0.7</string>
+	<string>0.0.8</string>
 	<key>CFBundleVersion</key>
 	<string>1</string>
 	<key>LSRequiresIPhoneOS</key>
@@ -28,6 +28,8 @@
 	<string>FileKeep Reader uses NFC to talk to your YubiKey when unlocking a bundle with a hardware key.</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>FileKeep Reader uses Face ID to unlock bundles you have chosen to remember, instead of typing the passphrase every time.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>FileKeep Reader needs access to your local network to browse SMB file shares and open bundles stored on your computers.</string>
 	<key>CFBundleIcons</key>
 	<dict>
 		<key>CFBundlePrimaryIcon</key>

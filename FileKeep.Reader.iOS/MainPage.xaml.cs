@@ -4,6 +4,7 @@ using FileKeep.Core;
 using FileKeep.Reader.iOS.Core.Bundle;
 using FileKeep.Reader.iOS.Core.Recents;
 using FileKeep.Reader.iOS.Core.Session;
+using FileKeep.Reader.iOS.Core.Smb;
 #if IOS
 using FileKeep.Reader.iOS.Platforms.iOS;
 using Foundation;
@@ -24,6 +25,7 @@ public partial class MainPage : ContentPage
 	private AudioPlayer? _audioPlayer;
 	private NSUrl? _sourceFileUrl; // Files pick source, for save-back
 	private string? _sourceHttpUrl; // HTTP download source, for upload-back
+	private string? _sourceSmbUrl; // SMB download source (smb:// URL), read-only in v1
 	private readonly Dictionary<string, byte[]> _modified = new(); // path -> new plaintext
 	private readonly HashSet<string> _deleted = new();
 	private bool _isReadOnly;
@@ -52,37 +54,7 @@ public partial class MainPage : ContentPage
 		ShowVault();
 	}
 
-	private async void OnOpenClicked(object? sender, EventArgs e)
-	{
-#if !IOS
-		await DisplayAlert("Not supported", "Bundle opening needs iOS.", "OK");
-		return;
-#else
-		CloseReader();
-		await OpenFromPickerAsync();
-#endif
-	}
-
 #if IOS
-	private async void OnDownloadClicked(object? sender, EventArgs e)
-	{
-		CloseReader();
-		string? url = await DisplayPromptAsync("Download bundle", "HTTPS URL of the .kfb file:");
-		if (string.IsNullOrWhiteSpace(url))
-			return;
-		url = url.Trim();
-		if (!url.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&
-		    !url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
-		{
-			StatusLabel.Text = "URL must start with http:// or https://.";
-			StatusLabel.TextColor = StatusColor("StatusError", "#F1707B");
-			SyncVaultStatus();
-			return;
-		}
-
-		await DownloadAndOpenAsync(url);
-	}
-
 	private async void OnNewClicked(object? sender, EventArgs e)
 	{
 #if !IOS
@@ -235,6 +207,7 @@ public partial class MainPage : ContentPage
 				SessionManager.Instance.Open(reader);
 				_sourceFileUrl = null;
 				_sourceHttpUrl = null;
+				_sourceSmbUrl = null;
 				_isReadOnly = false;
 				_isNewBundle = true;
 				_modified.Clear();
@@ -1514,6 +1487,7 @@ public partial class MainPage : ContentPage
 		_audioPlayer = null;
 		_sourceFileUrl = null;
 		_sourceHttpUrl = null;
+		_sourceSmbUrl = null;
 		foreach (var kv in _modified)
 			CryptographicOperations.ZeroMemory(kv.Value);
 		_modified.Clear();
@@ -1584,14 +1558,15 @@ public partial class MainPage : ContentPage
 	/// <summary>
 	/// RBP Obvious mockup: the active tab is white (icon + label), inactive
 	/// tabs are secondary gray. No blue, no background pill — the floating
-	/// bar itself is the container. The New tab is never active (it opens
-	/// the new-bundle flow without switching views).
+	/// bar itself is the container. The New and Open tabs are never active
+	/// (they open flows without switching views).
 	/// </summary>
 	private void SetActiveTab(string tab)
 	{
 		ApplyTab(VaultTabIcon, VaultTabLabel, tab == "Vault");
 		ApplyTab(ActivityTabIcon, ActivityTabLabel, tab == "Activity");
 		ApplyTab(NewTabIcon, NewTabLabel, false);
+		ApplyTab(OpenTabIcon, OpenTabLabel, false);
 		ApplyTab(SettingsTabIcon, SettingsTabLabel, tab == "Settings");
 	}
 
@@ -1701,11 +1676,30 @@ public partial class MainPage : ContentPage
 		ShowSettings();
 	}
 
+	/// <summary>
+	/// The Open tab is an ACTION, not a view: it shows the source
+	/// picker and never becomes the active tab — the active tab stays
+	/// where it was.
+	/// </summary>
+	private async void OnOpenTabClicked(object? sender, EventArgs e)
+	{
+#if !IOS
+		await DisplayAlert("Not supported", "Bundle opening needs iOS.", "OK");
+		return;
+#else
+		if (!await ConfirmLeaveBundleAsync())
+			return;
+		CloseReader();
+		await ShowOpenPickerAsync();
+#endif
+	}
+
 #if IOS
 	/// <summary>
 	/// Vault row tap: reopen through the existing open path. HTTP rows
-	/// re-download; Files rows resolve their security-scoped bookmark
-	/// (or fall back to the stored path) and open the bytes.
+	/// re-download; SMB rows re-download with the remembered sign-in;
+	/// Files rows resolve their security-scoped bookmark (or fall back
+	/// to the stored path) and open the bytes.
 	/// </summary>
 	private async void OnRecentSelected(object? sender, SelectionChangedEventArgs e)
 	{
@@ -1718,6 +1712,11 @@ public partial class MainPage : ContentPage
 	private async Task OpenRecentAsync(RecentBundle recent)
 	{
 		CloseReader();
+		if (recent.IsSmb)
+		{
+			await OpenSmbRecentAsync(recent.Source);
+			return;
+		}
 		if (recent.IsHttp)
 		{
 			await DownloadAndOpenAsync(recent.Source);
@@ -1761,14 +1760,15 @@ public partial class MainPage : ContentPage
 
 		_sourceFileUrl = url;
 		_sourceHttpUrl = null;
+		_sourceSmbUrl = null;
 		// SMB shares (via Files) are editable only if the user has write permission.
 		_isReadOnly = !IsUrlWritable(_sourceFileUrl);
 		await OpenBundleBytesAsync(bytes);
 	}
 
 	/// <summary>
-	/// The Files picker path, shared by the Open bundle button and by
-	/// vault rows whose stored access expired.
+	/// The Files picker path, shared by the Open picker's Files choice
+	/// and by vault rows whose stored access expired.
 	/// </summary>
 	private async Task OpenFromPickerAsync()
 	{
@@ -1789,14 +1789,16 @@ public partial class MainPage : ContentPage
 
 		_sourceFileUrl = BundleOpener.LastPickedUrl;
 		_sourceHttpUrl = null;
+		_sourceSmbUrl = null;
 		// SMB shares (via Files) are editable only if the user has write permission.
 		_isReadOnly = !IsUrlWritable(_sourceFileUrl);
 		await OpenBundleBytesAsync(bytes);
 	}
 
 	/// <summary>
-	/// The HTTP download path, shared by the From URL button and by
-	/// vault rows for HTTP bundles (HTTP sources are read-only).
+	/// The HTTP download path, shared by the Open picker's From URL
+	/// choice and by vault rows for HTTP bundles (HTTP sources are
+	/// read-only).
 	/// </summary>
 	private async Task DownloadAndOpenAsync(string url)
 	{
@@ -1818,8 +1820,133 @@ public partial class MainPage : ContentPage
 
 		_sourceFileUrl = null;
 		_sourceHttpUrl = url;
+		_sourceSmbUrl = null;
 		_isReadOnly = true; // HTTP sources are read-only
 		await OpenBundleBytesAsync(bytes);
+	}
+
+	/// <summary>
+	/// The tab-bar Open action: a source picker. Files and From URL
+	/// reuse the existing open paths; Network places opens the SMB
+	/// browser. The active tab stays where it was — Open is an action,
+	/// not a view. The reader is already closed by the caller.
+	/// </summary>
+	private async Task ShowOpenPickerAsync()
+	{
+		string? choice = await DisplayActionSheet("Open", "Cancel", null, "Files", "From URL", "Network places");
+		switch (choice)
+		{
+			case "Files":
+				await OpenFromPickerAsync();
+				break;
+			case "From URL":
+				string? url = await DisplayPromptAsync("Download bundle", "HTTPS URL of the .kfb file:");
+				if (string.IsNullOrWhiteSpace(url))
+					return;
+				url = url.Trim();
+				if (!url.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&
+				    !url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+				{
+					StatusLabel.Text = "URL must start with http:// or https://.";
+					StatusLabel.TextColor = StatusColor("StatusError", "#F1707B");
+					SyncVaultStatus();
+					return;
+				}
+				await DownloadAndOpenAsync(url);
+				break;
+			case "Network places":
+				await OpenFromNetworkPlacesAsync();
+				break;
+			default:
+				break; // Cancel (or dismissed): stay where we were.
+		}
+	}
+
+	/// <summary>
+	/// The Network places flow: a modal SMB browser page. On a chosen
+	/// bundle, the bytes open through the existing open flow
+	/// (read-only in v1, like HTTP) and the smb:// URL is recorded
+	/// in the vault list.
+	/// </summary>
+	private async Task OpenFromNetworkPlacesAsync(string? smbUrl = null)
+	{
+		var page = new NetworkPlacesPage(smbUrl);
+		await Navigation.PushModalAsync(page);
+		(byte[] Bytes, string SmbUrl)? result = await page.WaitForSelectionAsync();
+		if (result is null)
+			return; // user closed the page without choosing
+		_sourceFileUrl = null;
+		_sourceHttpUrl = null;
+		_sourceSmbUrl = result.Value.SmbUrl;
+		_isReadOnly = true; // SMB sources are read-only in v1
+		await OpenBundleBytesAsync(result.Value.Bytes);
+	}
+
+	/// <summary>
+	/// Vault row tap for an SMB bundle: re-download with the remembered
+	/// sign-in (server + username in Preferences, password in the
+	/// Keychain). When the sign-in is gone, the Network places page
+	/// opens pre-filled with the server so the user signs in again.
+	/// </summary>
+	private async Task OpenSmbRecentAsync(string smbUrl)
+	{
+		if (!SmbUrl.TryParse(smbUrl, out string server, out string share, out string path) ||
+			string.IsNullOrEmpty(path))
+		{
+			StatusLabel.Text = "That SMB link is no longer valid. Pick the bundle again.";
+			StatusLabel.TextColor = StatusColor("StatusError", "#F1707B");
+			SyncVaultStatus();
+			await OpenFromNetworkPlacesAsync();
+			return;
+		}
+		string username = SmbCredentials.LoadServers()
+			.FirstOrDefault(s => string.Equals(s.Server, server, StringComparison.OrdinalIgnoreCase))?.Username ?? "";
+		string? password = await SmbCredentials.GetPasswordAsync(server);
+		if (string.IsNullOrEmpty(username) || password is null)
+		{
+			StatusLabel.Text = "Saved SMB sign-in expired — sign in again.";
+			StatusLabel.TextColor = StatusColor("StatusWarn", "#F7B955");
+			SyncVaultStatus();
+			await OpenFromNetworkPlacesAsync(smbUrl);
+			return;
+		}
+		StatusLabel.Text = "Downloading…";
+		SyncVaultStatus();
+		try
+		{
+			using SmbSession session = await SmbSession.ConnectAsync(server, username, password);
+			await session.ConnectShareAsync(share);
+			string temp = Path.Combine(Microsoft.Maui.Storage.FileSystem.CacheDirectory, "smb-" + Guid.NewGuid().ToString("N") + ".kfb");
+			try
+			{
+				await session.DownloadFileAsync(path, temp);
+				// The existing open flow takes bytes, so the streamed
+				// temp file is read here (same as the HTTP path).
+				byte[] bytes = await File.ReadAllBytesAsync(temp);
+				_sourceFileUrl = null;
+				_sourceHttpUrl = null;
+				_sourceSmbUrl = smbUrl;
+				_isReadOnly = true; // SMB sources are read-only in v1
+				await OpenBundleBytesAsync(bytes);
+			}
+			finally
+			{
+				try
+				{
+					File.Delete(temp);
+				}
+				catch
+				{
+					// Temp cleanup is best-effort.
+				}
+			}
+		}
+		catch (Exception ex)
+		{
+			StatusLabel.Text = "Download failed: " + ex.Message;
+			StatusLabel.TextColor = StatusColor("StatusError", "#F1707B");
+			SyncVaultStatus();
+		}
 	}
 
 	/// <summary>
@@ -1832,15 +1959,25 @@ public partial class MainPage : ContentPage
 		string? name;
 		string? source;
 		bool isHttp;
-		if (_sourceHttpUrl is not null)
+		bool isSmb;
+		if (_sourceSmbUrl is not null)
+		{
+			isHttp = false;
+			isSmb = true;
+			source = _sourceSmbUrl;
+			name = DisplayNameFromUrl(_sourceSmbUrl);
+		}
+		else if (_sourceHttpUrl is not null)
 		{
 			isHttp = true;
+			isSmb = false;
 			source = _sourceHttpUrl;
 			name = DisplayNameFromUrl(_sourceHttpUrl);
 		}
 		else if (_sourceFileUrl?.Path is not null)
 		{
 			isHttp = false;
+			isSmb = false;
 			source = _sourceFileUrl.Path;
 			name = DisplayNameFromFile(_sourceFileUrl.LastPathComponent);
 		}
@@ -1858,8 +1995,10 @@ public partial class MainPage : ContentPage
 			Name = name,
 			Source = source,
 			IsHttp = isHttp,
+			IsSmb = isSmb,
 			BookmarkB64 = _currentBookmarkB64,
 			BadgeMethod = _currentBadgeMethod,
+			IconData = RecentBundleStore.IconDataForFiles(reader.Files),
 			FileCount = count,
 			ModifiedUtc = modified,
 		});

@@ -12,7 +12,7 @@
 
     <ApplicationTitle>FileKeep Reader</ApplicationTitle>
     <ApplicationId>com.filekeep.reader</ApplicationId>
-    <ApplicationDisplayVersion>0.0.7</ApplicationDisplayVersion>
+    <ApplicationDisplayVersion>0.0.8</ApplicationDisplayVersion>
     <ApplicationVersion>1</ApplicationVersion>
 
     <CodesignEntitlements Condition="'$(RuntimeIdentifier)' != 'iossimulator-arm64'">Platforms/iOS/Entitlements.plist</CodesignEntitlements>
@@ -36,6 +36,21 @@
     <BundleResource Include="Resources/BundleIcons/*.png">
       <Link>%(Filename)%(Extension)</Link>
     </BundleResource>
+  </ItemGroup>
+
+  <!-- Rust smb-ffi static library, built in CI from text source (never
+       committed): one .a per RuntimeIdentifier. The Security framework
+       is needed because Rust's getrandom uses SecRandomCopyBytes, and
+       that link directive does not propagate out of a staticlib. -->
+  <ItemGroup Condition="'$(RuntimeIdentifier)' == 'ios-arm64'">
+    <NativeReference Include="Rust\smb-ffi\target\aarch64-apple-ios\release\libsmb_ffi.a" Kind="Static" ForceLoad="true" SmartLink="false">
+      <Frameworks>Security</Frameworks>
+    </NativeReference>
+  </ItemGroup>
+  <ItemGroup Condition="'$(RuntimeIdentifier)' == 'iossimulator-arm64'">
+    <NativeReference Include="Rust\smb-ffi\target\aarch64-apple-ios-sim\release\libsmb_ffi.a" Kind="Static" ForceLoad="true" SmartLink="false">
+      <Frameworks>Security</Frameworks>
+    </NativeReference>
   </ItemGroup>
 
 </Project>

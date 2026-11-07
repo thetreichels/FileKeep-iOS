@@ -1,0 +1,15 @@
+[package]
+name = "smb-ffi"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+smb2 = "=0.43.0"
+tokio = { version = "1", features = ["rt-multi-thread", "net", "time", "fs", "io-util"] }
+serde_json = "1"
+
+[profile.release]
+lto = false
