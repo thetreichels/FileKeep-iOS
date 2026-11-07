@@ -57,12 +57,16 @@
 				</CollectionView>
 				<HorizontalStackLayout Grid.Row="4" Spacing="8">
 					<Button x:Name="OpenButton" Text="Open bundle" Clicked="OnOpenClicked"
-					        HorizontalOptions="FillAndExpand" />
+					        HorizontalOptions="FillAndExpand"
+					        BackgroundColor="{StaticResource Surface}"
+					        TextColor="{StaticResource TextPrimary}" />
 					<Button x:Name="DownloadButton" Text="From URL" Clicked="OnDownloadClicked"
-					        HorizontalOptions="FillAndExpand" />
+					        HorizontalOptions="FillAndExpand"
+					        BackgroundColor="{StaticResource Surface}"
+					        TextColor="{StaticResource TextPrimary}" />
 				</HorizontalStackLayout>
 				<Label x:Name="VaultStatusLabel" Grid.Row="5" Style="{StaticResource StatusText}" />
-				<Label x:Name="VersionLabel" Grid.Row="6" Text="v0.0.6"
+				<Label x:Name="VersionLabel" Grid.Row="6" Text="v0.0.7"
 				       FontSize="10" TextColor="#666666"
 				       HorizontalOptions="Center" Margin="0,4,0,2" />
 			</Grid>
@@ -127,20 +131,56 @@
 			</VerticalStackLayout>
 		</Grid>
 
-		<!-- Bottom tab bar -->
-		<Grid Grid.Row="1" ColumnDefinitions="*,*,*,*" BackgroundColor="{StaticResource Surface}" Padding="8,6">
-			<Button x:Name="VaultTabButton" Grid.Column="0" Text="🔒 Vault" Clicked="OnVaultTabClicked"
-			        BackgroundColor="#2D2D2D" TextColor="{StaticResource BrandPrimary}"
-			        FontSize="13" Padding="4" />
-			<Button x:Name="ActivityTabButton" Grid.Column="1" Text="🕐 Activity" Clicked="OnActivityTabClicked"
-			        BackgroundColor="Transparent" TextColor="{StaticResource TextSecondary}"
-			        FontAttributes="None" FontSize="13" Padding="4" />
-			<Button x:Name="NewTabButton" Grid.Column="2" Text="+ New" Clicked="OnNewClicked"
-			        BackgroundColor="Transparent" TextColor="{StaticResource TextSecondary}"
-			        FontAttributes="None" FontSize="13" Padding="4" />
-			<Button x:Name="SettingsTabButton" Grid.Column="3" Text="⚙ Settings" Clicked="OnSettingsTabClicked"
-			        BackgroundColor="Transparent" TextColor="{StaticResource TextSecondary}"
-			        FontAttributes="None" FontSize="13" Padding="4" />
-		</Grid>
+		<!-- Bottom tab bar: floating rounded bar (RBP Obvious mockup) —
+		     stacked line icon over label, active tab white, inactive gray. -->
+		<Frame Grid.Row="1" CornerRadius="18" Padding="10" HasShadow="False"
+		       BackgroundColor="{StaticResource Surface}" Margin="16,0,16,12">
+			<Grid ColumnDefinitions="*,*,*,*">
+				<VerticalStackLayout Grid.Column="0" Spacing="3">
+					<Path x:Name="VaultTabIcon" Data="M 9.75,13 L 9.75,8.94 A 3.25,4.6 0 0 1 13,4.33 A 3.25,4.6 0 0 1 16.25,8.94 L 16.25,13 M 9.75,13 L 16.25,13 A 2.17,2.17 0 0 1 18.42,15.17 L 18.42,19.5 A 2.17,2.17 0 0 1 16.25,21.67 L 9.75,21.67 A 2.17,2.17 0 0 1 7.58,19.5 L 7.58,15.17 A 2.17,2.17 0 0 1 9.75,13 Z"
+					       WidthRequest="26" HeightRequest="26" HorizontalOptions="Center"
+					       Aspect="None" Fill="Transparent" Stroke="White"
+					       StrokeThickness="1.9" StrokeLineCap="Round" StrokeLineJoin="Round" />
+					<Label x:Name="VaultTabLabel" Text="Vault" FontSize="11" FontAttributes="Bold"
+					       TextColor="White" HorizontalOptions="Center" />
+					<VerticalStackLayout.GestureRecognizers>
+						<TapGestureRecognizer Tapped="OnVaultTabClicked" />
+					</VerticalStackLayout.GestureRecognizers>
+				</VerticalStackLayout>
+				<VerticalStackLayout Grid.Column="1" Spacing="3">
+					<Path x:Name="ActivityTabIcon" Data="M 4.88,13 A 8.12,8.12 0 0 1 13,4.88 A 8.12,8.12 0 0 1 21.12,13 A 8.12,8.12 0 0 1 13,21.12 A 8.12,8.12 0 0 1 4.88,13 Z M 13,13 L 13,8.12 M 13,13 L 16.79,14.62"
+					       WidthRequest="26" HeightRequest="26" HorizontalOptions="Center"
+					       Aspect="None" Fill="Transparent" Stroke="{StaticResource TextSecondary}"
+					       StrokeThickness="1.9" StrokeLineCap="Round" StrokeLineJoin="Round" />
+					<Label x:Name="ActivityTabLabel" Text="Activity" FontSize="11"
+					       TextColor="{StaticResource TextSecondary}" HorizontalOptions="Center" />
+					<VerticalStackLayout.GestureRecognizers>
+						<TapGestureRecognizer Tapped="OnActivityTabClicked" />
+					</VerticalStackLayout.GestureRecognizers>
+				</VerticalStackLayout>
+				<VerticalStackLayout Grid.Column="2" Spacing="3">
+					<Path x:Name="NewTabIcon" Data="M 5.96,13 L 20.04,13 M 13,5.96 L 13,20.04"
+					       WidthRequest="26" HeightRequest="26" HorizontalOptions="Center"
+					       Aspect="None" Fill="Transparent" Stroke="{StaticResource TextSecondary}"
+					       StrokeThickness="1.9" StrokeLineCap="Round" StrokeLineJoin="Round" />
+					<Label x:Name="NewTabLabel" Text="New" FontSize="11"
+					       TextColor="{StaticResource TextSecondary}" HorizontalOptions="Center" />
+					<VerticalStackLayout.GestureRecognizers>
+						<TapGestureRecognizer Tapped="OnNewClicked" />
+					</VerticalStackLayout.GestureRecognizers>
+				</VerticalStackLayout>
+				<VerticalStackLayout Grid.Column="3" Spacing="3">
+					<Path x:Name="SettingsTabIcon" Data="M 19.31,11.43 L 21.58,11.79 L 21.58,14.21 L 19.31,14.57 L 19.01,15.49 L 18.57,16.35 L 19.92,18.22 L 18.22,19.92 L 16.35,18.57 L 15.49,19.01 L 14.57,19.31 L 14.21,21.58 L 11.79,21.58 L 11.43,19.31 L 10.51,19.01 L 9.65,18.57 L 7.78,19.92 L 6.08,18.22 L 7.43,16.35 L 6.99,15.49 L 6.69,14.57 L 4.42,14.21 L 4.42,11.79 L 6.69,11.43 L 6.99,10.51 L 7.43,9.65 L 6.08,7.78 L 7.78,6.08 L 9.65,7.43 L 10.51,6.99 L 11.43,6.69 L 11.79,4.42 L 14.21,4.42 L 14.57,6.69 L 15.49,6.99 L 16.35,7.43 L 18.22,6.08 L 19.92,7.78 L 18.57,9.65 L 19.01,10.51 Z M 9.75,13 A 3.25,3.25 0 0 1 13,9.75 A 3.25,3.25 0 0 1 16.25,13 A 3.25,3.25 0 0 1 13,16.25 A 3.25,3.25 0 0 1 9.75,13 Z"
+					       WidthRequest="26" HeightRequest="26" HorizontalOptions="Center"
+					       Aspect="None" Fill="Transparent" Stroke="{StaticResource TextSecondary}"
+					       StrokeThickness="1.9" StrokeLineCap="Round" StrokeLineJoin="Round" />
+					<Label x:Name="SettingsTabLabel" Text="Settings" FontSize="11"
+					       TextColor="{StaticResource TextSecondary}" HorizontalOptions="Center" />
+					<VerticalStackLayout.GestureRecognizers>
+						<TapGestureRecognizer Tapped="OnSettingsTabClicked" />
+					</VerticalStackLayout.GestureRecognizers>
+				</VerticalStackLayout>
+			</Grid>
+		</Frame>
 	</Grid>
 </ContentPage>

@@ -1550,7 +1550,7 @@ public partial class MainPage : ContentPage
 		ActivityView.IsVisible = false;
 		SettingsView.IsVisible = false;
 		LoadRecents(VaultSearchBar.Text);
-		SetActiveTab(VaultTabButton);
+		SetActiveTab("Vault");
 		SyncVaultStatus();
 	}
 
@@ -1560,7 +1560,7 @@ public partial class MainPage : ContentPage
 		BundleView.IsVisible = true;
 		ActivityView.IsVisible = false;
 		SettingsView.IsVisible = false;
-		SetActiveTab(VaultTabButton);
+		SetActiveTab("Vault");
 	}
 
 	private void ShowActivity()
@@ -1569,7 +1569,7 @@ public partial class MainPage : ContentPage
 		BundleView.IsVisible = false;
 		ActivityView.IsVisible = true;
 		SettingsView.IsVisible = false;
-		SetActiveTab(ActivityTabButton);
+		SetActiveTab("Activity");
 	}
 
 	private void ShowSettings()
@@ -1578,21 +1578,28 @@ public partial class MainPage : ContentPage
 		BundleView.IsVisible = false;
 		ActivityView.IsVisible = false;
 		SettingsView.IsVisible = true;
-		SetActiveTab(SettingsTabButton);
+		SetActiveTab("Settings");
 	}
 
-	private void SetActiveTab(Button active)
+	/// <summary>
+	/// RBP Obvious mockup: the active tab is white (icon + label), inactive
+	/// tabs are secondary gray. No blue, no background pill — the floating
+	/// bar itself is the container. The New tab is never active (it opens
+	/// the new-bundle flow without switching views).
+	/// </summary>
+	private void SetActiveTab(string tab)
 	{
-		foreach (var button in new[] { VaultTabButton, ActivityTabButton, NewTabButton, SettingsTabButton })
-		{
-			bool isActive = button == active;
-			// Windows dark parity: the active nav item is brand blue text
-			// on the #2d2d2d active-nav background; inactive items are
-			// secondary text on transparent.
-			button.TextColor = isActive ? Color.FromArgb("#0067C0") : Color.FromArgb("#A7A7A7");
-			button.BackgroundColor = isActive ? Color.FromArgb("#2D2D2D") : Colors.Transparent;
-			button.FontAttributes = isActive ? FontAttributes.Bold : FontAttributes.None;
-		}
+		ApplyTab(VaultTabIcon, VaultTabLabel, tab == "Vault");
+		ApplyTab(ActivityTabIcon, ActivityTabLabel, tab == "Activity");
+		ApplyTab(NewTabIcon, NewTabLabel, false);
+		ApplyTab(SettingsTabIcon, SettingsTabLabel, tab == "Settings");
+	}
+
+	private static void ApplyTab(Microsoft.Maui.Controls.Shapes.Path icon, Label label, bool isActive)
+	{
+		icon.Stroke = isActive ? Colors.White : Color.FromArgb("#A7A7A7");
+		label.TextColor = isActive ? Colors.White : Color.FromArgb("#A7A7A7");
+		label.FontAttributes = isActive ? FontAttributes.Bold : FontAttributes.None;
 	}
 
 	/// <summary>
