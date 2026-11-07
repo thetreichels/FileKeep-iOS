@@ -9,6 +9,7 @@
     <SingleProject>true</SingleProject>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 
     <ApplicationTitle>FileKeep Reader</ApplicationTitle>
     <ApplicationId>com.filekeep.reader</ApplicationId>
