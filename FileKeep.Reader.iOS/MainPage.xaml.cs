@@ -1767,6 +1767,28 @@ public partial class MainPage : ContentPage
 	}
 
 	/// <summary>
+	/// The share-sheet (Open-in) path: another app handed us a .kfb URL.
+	/// Mirrors the other open paths (confirm leaving a dirty bundle,
+	/// close the reader, set the source, then the shared open path).
+	/// The bundle is read-only in v1 — the URL points at a sandbox Inbox
+	/// copy, so saving back would never reach the originating app.
+	/// </summary>
+	public async Task OpenSharedBundleAsync(NSUrl url, byte[] bytes)
+	{
+		if (!await ConfirmLeaveBundleAsync())
+		{
+			CryptographicOperations.ZeroMemory(bytes);
+			return;
+		}
+		CloseReader();
+		_sourceFileUrl = url;
+		_sourceHttpUrl = null;
+		_sourceSmbUrl = null;
+		_isReadOnly = true; // share-sheet bundles are read-only in v1
+		await OpenBundleBytesAsync(bytes);
+	}
+
+	/// <summary>
 	/// The Files picker path, shared by the Open picker's Files choice
 	/// and by vault rows whose stored access expired.
 	/// </summary>

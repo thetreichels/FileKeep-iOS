@@ -7,7 +7,7 @@
 	<key>CFBundleIdentifier</key>
 	<string>com.filekeep.reader</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.0.8</string>
+	<string>0.0.9</string>
 	<key>CFBundleVersion</key>
 	<string>1</string>
 	<key>LSRequiresIPhoneOS</key>
@@ -30,6 +30,35 @@
 	<string>FileKeep Reader uses Face ID to unlock bundles you have chosen to remember, instead of typing the passphrase every time.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>FileKeep Reader needs access to your local network to browse SMB file shares and open bundles stored on your computers.</string>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.filekeep.bundle</string>
+			<key>UTTypeDescription</key>
+			<string>FileKeep bundle</string>
+			<key>UTTypeConformsTo</key>
+			<array><string>public.data</string></array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array><string>kfb</string></array>
+			</dict>
+		</dict>
+	</array>
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>FileKeep bundle</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Owner</string>
+			<key>LSItemContentTypes</key>
+			<array><string>com.filekeep.bundle</string></array>
+		</dict>
+	</array>
 	<key>CFBundleIcons</key>
 	<dict>
 		<key>CFBundlePrimaryIcon</key>
