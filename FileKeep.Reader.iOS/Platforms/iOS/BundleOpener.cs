@@ -76,49 +76,39 @@ public static class BundleOpener
 
 	/// <summary>
 	/// Presents the iOS document picker in export mode so the user can
-	/// save bundle bytes to Files (or another destination). Returns true
-	/// if the user completed the export, false if they cancelled.
+	/// save bundle bytes to a Files location of their choosing. Returns
+	/// the URL the user saved to, or null if they cancelled. Export mode
+	/// copies the temp file to the picked location; the copy is verified
+	/// by length and written directly if the system left it behind.
 	/// </summary>
-	public static Task<bool> ExportBundleAsync(byte[] bundleBytes)
+	public static Task<NSUrl?> SaveBundleAsAsync(byte[] bundleBytes, string fileName)
 	{
-		var tcs = new TaskCompletionSource<bool>();
 		var presenter = Microsoft.Maui.ApplicationModel.Platform.GetCurrentUIViewController();
+		var tcs = new TaskCompletionSource<NSUrl?>();
 		if (presenter is null)
 		{
-			tcs.SetResult(false);
+			tcs.SetResult(null);
 			return tcs.Task;
 		}
 
-		// Write to a temp file for the share sheet.
-		string tempPath = System.IO.Path.Combine(
-			System.IO.Path.GetTempPath(), $"bundle-{Guid.NewGuid():N}.kfb");
+		// Write to a temp file under the bundle's own name so the picker
+		// shows the right filename.
+		string tempPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), fileName);
 		try
 		{
 			System.IO.File.WriteAllBytes(tempPath, bundleBytes);
 		}
 		catch
 		{
-			tcs.SetResult(false);
+			tcs.SetResult(null);
 			return tcs.Task;
 		}
 
 		var url = Foundation.NSUrl.FromFilename(tempPath);
-		var activity = new UIKit.UIActivityViewController(new Foundation.NSObject[] { url }, null);
-		activity.CompletionWithItemsHandler = (_, completed, _, _) =>
-		{
-			try { System.IO.File.Delete(tempPath); } catch { }
-			tcs.TrySetResult(completed);
-		};
-
-		if (activity.PopoverPresentationController is not null && presenter.View is not null)
-		{
-			activity.PopoverPresentationController.SourceView = presenter.View;
-			var b = presenter.View.Bounds;
-			activity.PopoverPresentationController.SourceRect =
-				new CoreGraphics.CGRect(b.Width / 2, b.Height / 2, 0, 0);
-		}
-
-		presenter.PresentViewController(activity, true, null);
+		var picker = new UIDocumentPickerViewController(url, UIDocumentPickerMode.Export);
+		_activeDelegate = new ExportDelegate(tcs, () => _activeDelegate = null, tempPath, bundleBytes.Length);
+		picker.Delegate = _activeDelegate;
+		presenter.PresentViewController(picker, true, null);
 		return tcs.Task;
 	}
 
@@ -227,6 +217,69 @@ public static class BundleOpener
 			controller.DismissViewController(true, null);
 			try { _tcs.TrySetResult((null, null)); }
 			finally { _done(); }
+		}
+	}
+
+	/// <summary>
+	/// Export-mode delegate for SaveBundleAsAsync. Reports the URL the
+	/// user picked and verifies the export copy landed: export mode
+	/// normally copies the temp file itself, but if the destination is
+	/// missing or short the bytes are written directly.
+	/// </summary>
+	private sealed class ExportDelegate : UIDocumentPickerDelegate
+	{
+		private readonly TaskCompletionSource<NSUrl?> _tcs;
+		private readonly Action _done;
+		private readonly string _tempPath;
+		private readonly long _expectedLength;
+
+		public ExportDelegate(TaskCompletionSource<NSUrl?> tcs, Action done, string tempPath, long expectedLength)
+		{
+			_tcs = tcs;
+			_done = done;
+			_tempPath = tempPath;
+			_expectedLength = expectedLength;
+		}
+
+		public override void DidPickDocument(UIDocumentPickerViewController controller, NSUrl url)
+		{
+			controller.DismissViewController(true, null);
+			try
+			{
+				string path = url.Path ?? string.Empty;
+				bool complete = false;
+				try { complete = new System.IO.FileInfo(path).Length == _expectedLength; }
+				catch { }
+				if (!complete)
+				{
+					// The system left the destination behind — write the
+					// bytes directly. _tempPath still holds them.
+					try
+					{
+						byte[] bytes = System.IO.File.ReadAllBytes(_tempPath);
+						using var data = Foundation.NSData.FromArray(bytes);
+						data.Save(url, true);
+					}
+					catch { }
+				}
+				_tcs.TrySetResult(url);
+			}
+			finally
+			{
+				try { System.IO.File.Delete(_tempPath); } catch { }
+				_done();
+			}
+		}
+
+		public override void WasCancelled(UIDocumentPickerViewController controller)
+		{
+			controller.DismissViewController(true, null);
+			try { _tcs.TrySetResult(null); }
+			finally
+			{
+				try { System.IO.File.Delete(_tempPath); } catch { }
+				_done();
+			}
 		}
 	}
 }

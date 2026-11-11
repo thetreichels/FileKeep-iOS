@@ -28,6 +28,7 @@ cargo check
 | `fk_smb_connect_share(handle, share)` | Connect to a share; returns an `FK_*` code. |
 | `fk_smb_list_dir(handle, path)` | JSON array of `{"name","is_dir","size"}` (malloc'd string). |
 | `fk_smb_download_file(handle, path, dest, progress_cb)` | Stream to a temp file; progress callback, cancel, reconnect+resume. |
+| `fk_smb_upload_file(handle, path, data, len)` | Upload bytes to a path on the connected share (create or overwrite); one heal+retry on a dropped connection. |
 | `fk_smb_reconnect(handle)` | Reconnect a dropped session + re-connect its share. |
 | `fk_smb_disconnect(handle)` | Free the handle; drops the client and zeroes the password copy. |
 | `fk_smb_free_string(ptr)` | Free a string from list_shares / list_dir. |

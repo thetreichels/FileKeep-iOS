@@ -44,6 +44,14 @@ internal static partial class SmbNative
 	internal static partial int fk_smb_download_file(
 		nint handle, string path, string dest, SmbProgressCallback callback, nint userData);
 
+	/// <summary>
+	/// Upload <paramref name="len"/> bytes at <paramref name="data"/>
+	/// to <paramref name="path"/> on the connected share, creating or
+	/// overwriting it. Returns an FK_* code (0 = ok).
+	/// </summary>
+	[LibraryImport("__Internal", StringMarshalling = StringMarshalling.Utf8)]
+	internal static partial int fk_smb_upload_file(nint handle, string path, nint data, ulong len);
+
 	/// <summary>Reconnect a dropped session and re-connect its share. Returns an FK_* code (0 = ok).</summary>
 	[LibraryImport("__Internal", StringMarshalling = StringMarshalling.Utf8)]
 	internal static partial int fk_smb_reconnect(nint handle);

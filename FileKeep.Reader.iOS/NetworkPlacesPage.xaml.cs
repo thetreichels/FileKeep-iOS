@@ -12,8 +12,11 @@ namespace FileKeep.Reader.iOS;
 /// open flow. Modal page (MainPage is not in a NavigationPage).
 ///
 /// v1 scope: manual server entry + remembered servers; no Bonjour
-/// discovery. SMB bundles open read-only (like HTTP). The password
-/// lives in the Keychain (SecureStorage), never in Preferences.
+/// discovery. SMB bundles are editable: Save writes back through
+/// this same browser in save mode (NetworkPlacesPage.ForSave), which
+/// uploads the rebuilt encrypted bundle bytes to the picked share
+/// and folder. The password lives in the Keychain (SecureStorage),
+/// never in Preferences.
 /// </summary>
 public partial class NetworkPlacesPage : ContentPage
 {
@@ -27,6 +30,12 @@ public partial class NetworkPlacesPage : ContentPage
 	}
 
 	private readonly TaskCompletionSource<(byte[] Bytes, string SmbUrl)?> _selection = new();
+	private readonly TaskCompletionSource<string?> _saveSelection = new();
+
+	// Save mode: the page uploads bytes instead of downloading them.
+	private bool _saveMode;
+	private string _saveFileName = "";
+	private byte[] _saveBytes = Array.Empty<byte>();
 
 	private SmbSession? _session;
 	private string _server = "";
@@ -62,12 +71,36 @@ public partial class NetworkPlacesPage : ContentPage
 	/// </summary>
 	public Task<(byte[] Bytes, string SmbUrl)?> WaitForSelectionAsync() => _selection.Task;
 
+	/// <summary>
+	/// Builds the page in save mode: the user picks a share + folder
+	/// and the page uploads <paramref name="bytes"/> there under
+	/// <paramref name="fileName"/> (the current bundle name).
+	/// </summary>
+	public static NetworkPlacesPage ForSave(string fileName, byte[] bytes)
+	{
+		var page = new NetworkPlacesPage();
+		page._saveMode = true;
+		page._saveFileName = fileName;
+		page._saveBytes = bytes;
+		page.SaveFileEntry.Text = fileName;
+		page.SaveFileEntry.IsVisible = true;
+		page.BrowseHintLabel.Text = "Pick a folder and tap Save here — or tap a bundle name to reuse it.";
+		return page;
+	}
+
+	/// <summary>
+	/// The smb:// URL the bundle was saved to, or null when the user
+	/// closed the page without saving.
+	/// </summary>
+	public Task<string?> WaitForSaveAsync() => _saveSelection.Task;
+
 	protected override void OnDisappearing()
 	{
 		base.OnDisappearing();
 		_gone = true;
 		_downloadCts?.Cancel();
 		_selection.TrySetResult(null);
+		_saveSelection.TrySetResult(null);
 		DisposeSessionIfGone();
 	}
 
@@ -183,6 +216,7 @@ public partial class NetworkPlacesPage : ContentPage
 		}
 		PathLabel.Text = $"{_server} — shares";
 		BackButton.IsVisible = false;
+		SaveHereButton.IsVisible = false; // No folder picked yet in save mode.
 		BrowseView.ItemsSource = shares.Select(s => new SmbBrowseItem
 		{
 			Name = s,
@@ -226,6 +260,7 @@ public partial class NetworkPlacesPage : ContentPage
 		SetStatus("", isError: false);
 		PathLabel.Text = SmbUrl.Format(_server, _share, path);
 		BackButton.IsVisible = true;
+		SaveHereButton.IsVisible = _saveMode; // Inside a share: a save target exists.
 		var items = entries
 			.Where(en => en.IsDir || en.Name.EndsWith(".kfb", StringComparison.OrdinalIgnoreCase))
 			.OrderByDescending(en => en.IsDir)
@@ -258,7 +293,64 @@ public partial class NetworkPlacesPage : ContentPage
 			await ShowDirectoryAsync(_path);
 			return;
 		}
+		if (_saveMode)
+		{
+			// Save mode: tapping a bundle reuses its name for the
+			// save instead of downloading it.
+			SaveFileEntry.Text = item.Name;
+			return;
+		}
 		await DownloadAndReturnAsync(item);
+	}
+
+	/// <summary>
+	/// Save mode: uploads the bytes to the current folder under the
+	/// name in the filename entry, confirming an overwrite against
+	/// the current directory listing, then hands the smb:// URL back
+	/// to MainPage and closes.
+	/// </summary>
+	private async void OnSaveHereClicked(object? sender, EventArgs e)
+	{
+		if (_session is null || _share is null)
+			return;
+		string fileName = SaveFileEntry.Text?.Trim() ?? "";
+		if (string.IsNullOrEmpty(fileName))
+		{
+			SetStatus("Enter a filename to save as.", isError: true);
+			return;
+		}
+		if (!fileName.EndsWith(".kfb", StringComparison.OrdinalIgnoreCase))
+			fileName += ".kfb";
+		string remotePath = JoinPath(_path, fileName);
+		// Overwrite check against the current directory listing
+		// (best-effort: the listing can be stale).
+		bool exists = BrowseView.ItemsSource is IEnumerable<SmbBrowseItem> items &&
+			items.Any(i => !i.IsDir && string.Equals(i.Name, fileName, StringComparison.OrdinalIgnoreCase));
+		if (exists)
+		{
+			bool replace = await DisplayAlert("Replace file?",
+				$"{fileName} already exists in this folder. Replace it?", "Replace", "Cancel");
+			if (!replace)
+				return;
+		}
+		SaveHereButton.IsEnabled = false;
+		SetStatus($"Saving {fileName}…", isError: false);
+		try
+		{
+			await TrackAsync(() => _session.UploadFileAsync(remotePath, _saveBytes));
+			if (_gone)
+				return;
+			_saveSelection.TrySetResult(SmbUrl.Format(_server, _share, remotePath));
+			await Navigation.PopModalAsync();
+		}
+		catch (Exception ex)
+		{
+			SetStatus("Save failed: " + ex.Message, isError: true);
+		}
+		finally
+		{
+			SaveHereButton.IsEnabled = true;
+		}
 	}
 
 	private async void OnBackClicked(object? sender, EventArgs e)

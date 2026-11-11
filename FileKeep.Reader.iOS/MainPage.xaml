@@ -59,7 +59,7 @@
 					</CollectionView.ItemTemplate>
 				</CollectionView>
 				<Label x:Name="VaultStatusLabel" Grid.Row="4" Style="{StaticResource StatusText}" />
-				<Label x:Name="VersionLabel" Grid.Row="5" Text="v0.0.9"
+				<Label x:Name="VersionLabel" Grid.Row="5" Text="v0.0.10"
 				       FontSize="10" TextColor="#666666"
 				       HorizontalOptions="Center" Margin="0,4,0,2" />
 			</Grid>
@@ -92,9 +92,7 @@
 					</CollectionView.ItemTemplate>
 				</CollectionView>
 				<HorizontalStackLayout Spacing="8">
-					<Button x:Name="SaveButton" Text="Save bundle" Clicked="OnSaveClicked"
-					        IsVisible="False" HorizontalOptions="FillAndExpand" />
-					<Button x:Name="UploadButton" Text="Upload" Clicked="OnUploadClicked"
+					<Button x:Name="SaveButton" Text="Save" Clicked="OnSaveClicked"
 					        IsVisible="False" HorizontalOptions="FillAndExpand" />
 				</HorizontalStackLayout>
 				<!-- Flexible preview area -->

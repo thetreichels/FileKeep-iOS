@@ -77,6 +77,9 @@ pub const FK_OTHER: c_int = 99;
 const CONNECT_TIMEOUT_SECS: u64 = 10;
 /// Reconnect attempts inside one download before giving up.
 const MAX_RECONNECTS: u32 = 3;
+/// Uploads rewrite the whole file per attempt, so one retry (not
+/// three) is the safe bound for a dropped connection.
+const MAX_UPLOAD_RECONNECTS: u32 = 1;
 
 /// Progress callback supplied by the C# side: invoked after each chunk
 /// with (bytes_downloaded, total_bytes). Return non-zero to cancel the
@@ -673,6 +676,94 @@ async fn download_to_file(
                         .map_err(|e| (FK_IO, format!("cannot recreate temp file: {e}")))?;
                     written = 0;
                     checkpoint = None;
+                    heal_session(state).await?;
+                    continue;
+                }
+                return Err((code, msg));
+            }
+        }
+    }
+}
+
+/// Upload `len` bytes at `data` to `path` on the connected share,
+/// creating or overwriting it. Returns `FK_OK` on success; another
+/// `FK_*` code on failure. A dropped connection is healed and the
+/// upload retried once from the start.
+#[no_mangle]
+pub extern "C" fn fk_smb_upload_file(
+    handle: *mut Session,
+    path: *const c_char,
+    data: *const u8,
+    len: usize,
+) -> c_int {
+    guarded(FK_OTHER, || {
+        clear_error();
+        if data.is_null() && len > 0 {
+            set_error(FK_INVALID_ARGUMENT, "null data argument");
+            return FK_INVALID_ARGUMENT;
+        }
+        let path = match unsafe { c_str_to_string(path) } {
+            Ok(s) => s,
+            Err(e) => {
+                set_error(FK_INVALID_ARGUMENT, &e);
+                return FK_INVALID_ARGUMENT;
+            }
+        };
+        let session = match unsafe { session(handle) } {
+            Ok(s) => s,
+            Err((code, msg)) => {
+                set_error(code, &msg);
+                return code;
+            }
+        };
+        // A zero-length upload never touches `data` (from_raw_parts
+        // with a NULL pointer would be UB even for len 0).
+        let bytes: &[u8] = if len == 0 {
+            &[]
+        } else {
+            unsafe { std::slice::from_raw_parts(data, len) }
+        };
+        let mut state = match session.state.lock() {
+            Ok(g) => g,
+            Err(_) => {
+                set_error(FK_OTHER, "session mutex poisoned");
+                return FK_OTHER;
+            }
+        };
+        match block_on(upload_to_file(&mut state, &path, bytes)) {
+            Ok(_) => FK_OK,
+            Err((code, msg)) => {
+                set_error(code, &msg);
+                code
+            }
+        }
+    })
+}
+
+/// Upload `data` to `path` on the connected share (smb2 `write_file`:
+/// create or overwrite). A dropped connection is healed and the whole
+/// file rewritten once; anything else fails with its mapped FK_* code.
+async fn upload_to_file(
+    state: &mut SessionState,
+    path: &str,
+    data: &[u8],
+) -> Result<u64, (c_int, String)> {
+    let mut reconnects: u32 = 0;
+    loop {
+        // Disjoint field borrows: `tree` from state.tree, the client
+        // call from state.client — no destructure needed.
+        let tree = match state.tree.as_ref() {
+            Some(t) => t,
+            None => return Err((FK_INVALID_ARGUMENT, "no share connected".to_string())),
+        };
+        match state.client.write_file(tree, path, data).await {
+            Ok(written) => return Ok(written),
+            Err(e) => {
+                let (code, msg) = map_smb_error(&e);
+                if (code == FK_CONNECTION_LOST || code == FK_SESSION_EXPIRED)
+                    && reconnects < MAX_UPLOAD_RECONNECTS
+                {
+                    reconnects += 1;
                     heal_session(state).await?;
                     continue;
                 }

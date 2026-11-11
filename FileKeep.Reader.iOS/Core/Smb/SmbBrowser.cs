@@ -170,6 +170,31 @@ public sealed class SmbSession : IDisposable
 		}, ct);
 	}
 
+	/// <summary>
+	/// Upload <paramref name="bytes"/> to <paramref name="remotePath"/>
+	/// on the connected share, creating or overwriting it. A dropped
+	/// connection is reconnected and the upload retried once from the
+	/// start (the Rust side rewrites the whole file per attempt).
+	/// </summary>
+	public Task UploadFileAsync(string remotePath, byte[] bytes)
+	{
+		return Task.Run(() =>
+		{
+			GCHandle pinned = GCHandle.Alloc(bytes, GCHandleType.Pinned);
+			try
+			{
+				int code = SmbNative.fk_smb_upload_file(
+					_handle.DangerousGetHandle(), remotePath,
+					pinned.AddrOfPinnedObject(), (ulong)bytes.Length);
+				ThrowIfFailed(code);
+			}
+			finally
+			{
+				pinned.Free();
+			}
+		});
+	}
+
 	/// <summary>Reconnect a dropped session and re-connect its share. (The download path already does this internally; this is for a failed listing the caller wants to retry.)</summary>
 	public Task ReconnectAsync()
 	{

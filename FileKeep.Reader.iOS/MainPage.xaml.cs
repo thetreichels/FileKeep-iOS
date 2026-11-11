@@ -14,10 +14,11 @@ using UIKit;
 namespace FileKeep.Reader.iOS;
 
 /// <summary>
-/// FileKeep secure workspace: open a bundle (Files or HTTP), unlock
-/// (Face ID / YubiKey / passphrase), read, create, update, and delete
-/// files behind the DEK veil, then save back or upload the re-encrypted
-/// bundle. Plaintext lives in memory only; the HTTP server sees ciphertext.
+/// FileKeep secure workspace: open a bundle (Files, URL, or a network
+/// place), unlock (Face ID / YubiKey / passphrase), read, create, update,
+/// and delete files behind the DEK veil, then save the re-encrypted bundle
+/// back to Files, a network place, or an HTTPS URL. Plaintext lives in
+/// memory only; the destination sees ciphertext.
 /// </summary>
 public partial class MainPage : ContentPage
 {
@@ -25,7 +26,7 @@ public partial class MainPage : ContentPage
 	private AudioPlayer? _audioPlayer;
 	private NSUrl? _sourceFileUrl; // Files pick source, for save-back
 	private string? _sourceHttpUrl; // HTTP download source, for upload-back
-	private string? _sourceSmbUrl; // SMB download source (smb:// URL), read-only in v1
+	private string? _sourceSmbUrl; // SMB download source (smb:// URL), for save-back
 	private readonly Dictionary<string, byte[]> _modified = new(); // path -> new plaintext
 	private readonly HashSet<string> _deleted = new();
 	private bool _isReadOnly;
@@ -856,7 +857,6 @@ public partial class MainPage : ContentPage
 	private void UpdateDirtyUi()
 	{
 		SaveButton.IsVisible = IsDirty && !_isReadOnly;
-		UploadButton.IsVisible = SessionManager.Instance.IsOpen && !_isReadOnly;
 		AddFileButton.IsVisible = SessionManager.Instance.IsOpen;
 	}
 #endif
@@ -1241,43 +1241,43 @@ public partial class MainPage : ContentPage
 			return;
 		}
 
-		// Write back.
+		// Save: one button, one picker — the same three places the Open
+		// picker reads from, plus "Save back to this file" when the open
+		// bundle is a local file. The update entry is local-only on
+		// purpose: a network source would assume connectivity is
+		// available, and it might not be. Each branch writes the
+		// rebuilt bytes and reports success; a failed or cancelled save
+		// leaves the staged changes in place so the user can retry.
 		bool wroteToKnownSource = false;
 		try
 		{
-			if (_sourceFileUrl is not null)
+			var destinations = new List<string>();
+			if (_sourceFileUrl is not null && IsUrlWritable(_sourceFileUrl))
+				destinations.Add("Save back to this file");
+			destinations.Add("Files on this phone");
+			destinations.Add("From URL");
+			destinations.Add("Network places");
+			string? choice = await DisplayActionSheet("Save", "Cancel", null, destinations.ToArray());
+			switch (choice)
 			{
-				bool ok = BundleOpener.WriteBack(_sourceFileUrl, newBundle);
-				StatusLabel.Text = ok ? "Saved." : "Couldn't write back to the file.";
-				wroteToKnownSource = ok;
-			}
-			else if (_sourceHttpUrl is not null)
-			{
-				using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(60) };
-				using var resp = await http.PutAsync(_sourceHttpUrl, new ByteArrayContent(newBundle));
-				StatusLabel.Text = resp.IsSuccessStatusCode ? "Uploaded." : $"Upload failed: {(int)resp.StatusCode}.";
-				wroteToKnownSource = resp.IsSuccessStatusCode;
-			}
-			else if (_isNewBundle)
-			{
-				// New bundle: let the user pick where to save it.
-				bool saved = await BundleOpener.ExportBundleAsync(newBundle);
-				if (saved)
-				{
-					StatusLabel.Text = "Saved.";
-					_isNewBundle = false;
-				}
-				else
-				{
+				case "Save back to this file":
+					wroteToKnownSource = await SaveBackToCurrentFileAsync(newBundle);
+					break;
+				case "Files on this phone":
+					wroteToKnownSource = await SaveToFilesAsync(newBundle);
+					break;
+				case "From URL":
+					wroteToKnownSource = await SaveToUrlAsync(newBundle);
+					break;
+				case "Network places":
+					wroteToKnownSource = await SaveToNetworkPlacesAsync(newBundle);
+					break;
+				default:
 					StatusLabel.Text = "Save cancelled.";
 					return;
-				}
 			}
-			else
-			{
-				StatusLabel.Text = "No destination — use Upload to send it somewhere.";
+			if (!wroteToKnownSource)
 				return;
-			}
 		}
 		catch (Exception ex)
 		{
@@ -1305,92 +1305,130 @@ public partial class MainPage : ContentPage
 			RecordCurrentBundle();
 	}
 
-	private async void OnUploadClicked(object? sender, EventArgs e)
+	/// <summary>
+	/// Update branch: writes the rebuilt bytes back to the local file
+	/// the bundle was opened from. Only offered when the source is a
+	/// local Files URL — never for a network source, since that would
+	/// assume connectivity is available. A plain local write, no network.
+	/// </summary>
+	private Task<bool> SaveBackToCurrentFileAsync(byte[] newBundle)
 	{
-		if (!SessionManager.Instance.IsOpen)
-			return;
-		SessionManager.Instance.Touch();
+		if (_sourceFileUrl is null)
+			return Task.FromResult(false);
+		bool ok = BundleOpener.WriteBack(_sourceFileUrl, newBundle);
+		StatusLabel.Text = ok ? "Saved." : "Couldn't write back to the file.";
+		StatusLabel.TextColor = StatusColor(ok ? "StatusOk" : "StatusError", ok ? "#6CCB5F" : "#F1707B");
+		return Task.FromResult(ok);
+	}
+
+	/// <summary>
+	/// Save branch: Files on this phone (save-as). Always opens the
+	/// document picker in export mode to choose a location and name.
+	/// Writing back in place is the "Save back to this file" entry,
+	/// offered only for a local file source. On a save-as the picked
+	/// URL becomes the bundle's source, so the next Save offers the
+	/// update entry for it.
+	/// </summary>
+	private async Task<bool> SaveToFilesAsync(byte[] newBundle)
+	{
+		NSUrl? savedUrl = await BundleOpener.SaveBundleAsAsync(newBundle, CurrentBundleFileName());
+		if (savedUrl is null)
+		{
+			StatusLabel.Text = "Save cancelled.";
+			return false;
+		}
+		_sourceFileUrl = savedUrl;
+		_sourceHttpUrl = null;
+		_sourceSmbUrl = null;
+		_currentBookmarkB64 = CreateBookmark(savedUrl);
+		_isNewBundle = false;
+		StatusLabel.Text = "Saved.";
+		StatusLabel.TextColor = StatusColor("StatusOk", "#6CCB5F");
+		return true;
+	}
+
+	/// <summary>
+	/// Save branch: From URL. Prompts for an HTTPS URL (the old Upload
+	/// prompt) and PUTs the rebuilt bytes there. On success the URL
+	/// becomes the bundle's source.
+	/// </summary>
+	private async Task<bool> SaveToUrlAsync(byte[] newBundle)
+	{
 		string? url = await DisplayPromptAsync("Upload bundle", "HTTPS URL to PUT the encrypted bundle to:",
 			initialValue: _sourceHttpUrl ?? "");
 		if (string.IsNullOrWhiteSpace(url))
-			return;
+		{
+			StatusLabel.Text = "Save cancelled.";
+			return false;
+		}
 		url = url.Trim();
-
-		// Build current bytes (with staged changes if any).
-		byte[] bundleBytes;
-		var reader = SessionManager.Instance.Reader;
-		try
-		{
-			bundleBytes = await Task.Run(() =>
-			{
-				if (!IsDirty)
-				{
-					// No changes: upload the original bytes. We don't keep them;
-					// rebuild from the reader (identical output for unmodified files).
-					byte[] dek = reader.GetDekCopy();
-					try
-					{
-						var files = new List<(string Path, byte[] Plaintext)>();
-						foreach (var entry in reader.Files)
-							files.Add((entry.Path, reader.OpenFile(entry)));
-						var h1 = reader.GetHeaderSnapshot(); h1.Wraps.AddRange(_pendingWraps);
-						byte[] built = BundleWriter.Rebuild(h1, dek, files);
-						foreach (var f in files)
-							CryptographicOperations.ZeroMemory(f.Plaintext);
-						return built;
-					}
-					finally { CryptographicOperations.ZeroMemory(dek); }
-				}
-				// Has staged changes: same path as Save.
-				byte[] dek2 = reader.GetDekCopy();
-				try
-				{
-					var files = new List<(string Path, byte[] Plaintext)>();
-					foreach (var entry in reader.Files)
-					{
-						if (_deleted.Contains(entry.Path))
-							continue;
-						files.Add(_modified.TryGetValue(entry.Path, out byte[]? mod)
-							? (entry.Path, mod)
-							: (entry.Path, reader.OpenFile(entry)));
-					}
-					foreach (var kv in _modified)
-						if (!files.Any(f => f.Path == kv.Key))
-							files.Add((kv.Key, kv.Value));
-					var h2 = reader.GetHeaderSnapshot(); h2.Wraps.AddRange(_pendingWraps);
-					byte[] built = BundleWriter.Rebuild(h2, dek2, files);
-					foreach (var f in files)
-						if (!_modified.ContainsKey(f.Path))
-							CryptographicOperations.ZeroMemory(f.Plaintext);
-					return built;
-				}
-				finally { CryptographicOperations.ZeroMemory(dek2); }
-			});
-		}
-		catch (Exception ex)
-		{
-			StatusLabel.Text = "Build failed: " + ex.Message;
-			return;
-		}
-
+		StatusLabel.Text = "Uploading…";
 		try
 		{
 			using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(120) };
-			using var resp = await http.PutAsync(url, new ByteArrayContent(bundleBytes));
-			StatusLabel.Text = resp.IsSuccessStatusCode ? "Uploaded." : $"Upload failed: {(int)resp.StatusCode}.";
-			StatusLabel.TextColor = StatusColor(resp.IsSuccessStatusCode ? "StatusOk" : "StatusError", resp.IsSuccessStatusCode ? "#6CCB5F" : "#F1707B");
-			if (resp.IsSuccessStatusCode)
+			using var resp = await http.PutAsync(url, new ByteArrayContent(newBundle));
+			bool ok = resp.IsSuccessStatusCode;
+			StatusLabel.Text = ok ? "Uploaded." : $"Upload failed: {(int)resp.StatusCode}.";
+			StatusLabel.TextColor = StatusColor(ok ? "StatusOk" : "StatusError", ok ? "#6CCB5F" : "#F1707B");
+			if (ok)
+			{
 				_sourceHttpUrl = url;
+				_sourceFileUrl = null;
+				_sourceSmbUrl = null;
+			}
+			return ok;
 		}
 		catch (Exception ex)
 		{
 			StatusLabel.Text = "Upload failed: " + ex.Message;
 			StatusLabel.TextColor = StatusColor("StatusError", "#F1707B");
+			return false;
 		}
-		finally
+	}
+
+	/// <summary>
+	/// Save branch: Network places. Opens the SMB browser in save mode:
+	/// pick a share + folder, the filename defaults to this bundle's
+	/// name, and an existing file of that name asks before it is
+	/// replaced. On success the smb:// URL becomes the bundle's source.
+	/// </summary>
+	private async Task<bool> SaveToNetworkPlacesAsync(byte[] newBundle)
+	{
+		var page = NetworkPlacesPage.ForSave(CurrentBundleFileName(), newBundle);
+		await Navigation.PushModalAsync(page);
+		string? smbUrl = await page.WaitForSaveAsync();
+		if (smbUrl is null)
 		{
-			CryptographicOperations.ZeroMemory(bundleBytes);
+			StatusLabel.Text = "Save cancelled.";
+			return false;
 		}
+		_sourceSmbUrl = smbUrl;
+		_sourceFileUrl = null;
+		_sourceHttpUrl = null;
+		StatusLabel.Text = "Saved.";
+		StatusLabel.TextColor = StatusColor("StatusOk", "#6CCB5F");
+		return true;
+	}
+
+	/// <summary>
+	/// The filename a save-as defaults to: the current bundle's name
+	/// from whichever source it came from, else "bundle.kfb".
+	/// </summary>
+	private string CurrentBundleFileName()
+	{
+		string? name = _sourceFileUrl?.LastPathComponent;
+		if (string.IsNullOrEmpty(name) && _sourceSmbUrl is not null)
+			name = _sourceSmbUrl.TrimEnd('/').Split('/').Last();
+		if (string.IsNullOrEmpty(name) && _sourceHttpUrl is not null)
+		{
+			string last = _sourceHttpUrl.TrimEnd('/').Split('/').Last();
+			name = last.Split('?', '#')[0];
+		}
+		if (string.IsNullOrEmpty(name))
+			name = "bundle.kfb";
+		if (!name.EndsWith(".kfb", StringComparison.OrdinalIgnoreCase))
+			name += ".kfb";
+		return name;
 	}
 
 	private static bool IsAudioExtension(string ext) => ext is
@@ -1819,8 +1857,8 @@ public partial class MainPage : ContentPage
 
 	/// <summary>
 	/// The HTTP download path, shared by the Open picker's From URL
-	/// choice and by vault rows for HTTP bundles (HTTP sources are
-	/// read-only).
+	/// choice and by vault rows for HTTP bundles. HTTP bundles are
+	/// editable: Save PUTs the rebuilt bytes back to the same URL.
 	/// </summary>
 	private async Task DownloadAndOpenAsync(string url)
 	{
@@ -1843,7 +1881,7 @@ public partial class MainPage : ContentPage
 		_sourceFileUrl = null;
 		_sourceHttpUrl = url;
 		_sourceSmbUrl = null;
-		_isReadOnly = true; // HTTP sources are read-only
+		_isReadOnly = false; // HTTP sources are editable: Save PUTs back.
 		await OpenBundleBytesAsync(bytes);
 	}
 
@@ -1855,10 +1893,10 @@ public partial class MainPage : ContentPage
 	/// </summary>
 	private async Task ShowOpenPickerAsync()
 	{
-		string? choice = await DisplayActionSheet("Open", "Cancel", null, "Files", "From URL", "Network places");
+		string? choice = await DisplayActionSheet("Open", "Cancel", null, "Files on this phone", "From URL", "Network places");
 		switch (choice)
 		{
-			case "Files":
+			case "Files on this phone":
 				await OpenFromPickerAsync();
 				break;
 			case "From URL":
@@ -1886,9 +1924,9 @@ public partial class MainPage : ContentPage
 
 	/// <summary>
 	/// The Network places flow: a modal SMB browser page. On a chosen
-	/// bundle, the bytes open through the existing open flow
-	/// (read-only in v1, like HTTP) and the smb:// URL is recorded
-	/// in the vault list.
+	/// bundle, the bytes open through the existing open flow and the
+	/// smb:// URL is recorded in the vault list. SMB bundles are
+	/// editable: Save writes back to the share (via the picker).
 	/// </summary>
 	private async Task OpenFromNetworkPlacesAsync(string? smbUrl = null)
 	{
@@ -1900,7 +1938,7 @@ public partial class MainPage : ContentPage
 		_sourceFileUrl = null;
 		_sourceHttpUrl = null;
 		_sourceSmbUrl = result.Value.SmbUrl;
-		_isReadOnly = true; // SMB sources are read-only in v1
+		_isReadOnly = false; // SMB sources are editable: Save writes back.
 		await OpenBundleBytesAsync(result.Value.Bytes);
 	}
 
@@ -1948,7 +1986,7 @@ public partial class MainPage : ContentPage
 				_sourceFileUrl = null;
 				_sourceHttpUrl = null;
 				_sourceSmbUrl = smbUrl;
-				_isReadOnly = true; // SMB sources are read-only in v1
+				_isReadOnly = false; // SMB sources are editable: Save writes back.
 				await OpenBundleBytesAsync(bytes);
 			}
 			finally
