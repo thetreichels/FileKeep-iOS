@@ -1278,6 +1278,16 @@ public partial class MainPage : ContentPage
 			}
 			if (!wroteToKnownSource)
 				return;
+
+			// Re-open the rebuilt bytes so the session reader matches what
+			// was just saved. Without this the session keeps the old file
+			// list and a second save rebuilds from it — dropping files
+			// added by the first save and resurrecting deleted ones.
+			if (!TryReopenSavedBytes(reader, newBundle))
+			{
+				StatusLabel.Text = "Saved, but the session couldn't refresh — reopen the bundle to see the saved files.";
+				return;
+			}
 		}
 		catch (Exception ex)
 		{
@@ -1303,6 +1313,39 @@ public partial class MainPage : ContentPage
 		// A share-sheet export reports no destination, so it can't be recorded.
 		if (wroteToKnownSource)
 			RecordCurrentBundle();
+	}
+
+	/// <summary>
+	/// Replaces the session reader with a fresh reader over the saved
+	/// bytes, reusing the session DEK (no re-prompt) and the in-memory
+	/// bytes (never re-read from disk or network). The new reader takes
+	/// a COPY: the save's finally zeroes newBundle, and BundleReader
+	/// keeps the array reference. Returns false — leaving the old
+	/// session and the staged changes untouched — when the re-open
+	/// fails, so the user can retry the save.
+	/// </summary>
+	private static bool TryReopenSavedBytes(BundleReader reader, byte[] newBundle)
+	{
+		byte[] reopenBytes = (byte[])newBundle.Clone();
+		byte[] dek = reader.GetDekCopy();
+		BundleReader? newReader = null;
+		try
+		{
+			newReader = BundleReader.OpenWithDek(reopenBytes, dek);
+			SessionManager.Instance.Open(newReader);
+			newReader = null; // session owns it now
+			return true;
+		}
+		catch
+		{
+			newReader?.Dispose();
+			CryptographicOperations.ZeroMemory(reopenBytes);
+			return false;
+		}
+		finally
+		{
+			CryptographicOperations.ZeroMemory(dek);
+		}
 	}
 
 	/// <summary>
