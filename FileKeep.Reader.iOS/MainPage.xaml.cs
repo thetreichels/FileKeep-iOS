@@ -952,6 +952,7 @@ public partial class MainPage : ContentPage
 				".pdf" => PdfViewer.Create(plaintext),
 				".mp4" or ".mov" or ".m4v" => VideoViewer.Create(plaintext, VideoViewer.MimeForExtension(ext)),
 				".docx" or ".xlsx" or ".pptx" or ".doc" or ".xls" or ".ppt" => CreateOfficePlaceholder(path, plaintext),
+				".kfb" => CreateBundlePreview(plaintext),
 				_ => CreateHexViewer(plaintext),
 			};
 		}
@@ -1092,6 +1093,134 @@ public partial class MainPage : ContentPage
 			Orientation = ScrollOrientation.Both,
 		};
 	}
+
+	/// <summary>
+	/// Nested-bundle preview: a .kfb file inside an open bundle shows its
+	/// innards from the plaintext header — file list with sizes, unlock
+	/// methods, format — without unlocking it. The file contents stay
+	/// encrypted; this reads only the header, the same metadata the vault
+	/// list already derives badges from. Read-only: no way to open the
+	/// inner bundle's files from here.
+	/// </summary>
+	private static View CreateBundlePreview(byte[] bundleBytes)
+	{
+		if (!BundleReader.TryPeekHeader(bundleBytes, out BundleHeader? header) || header is null)
+		{
+			return new Label { Text = "Not a valid FileKeep bundle — the header could not be read." };
+		}
+
+		var layout = new VerticalStackLayout { Spacing = 8 };
+		layout.Children.Add(new Label { Text = "Nested bundle", FontAttributes = FontAttributes.Bold, FontSize = 15 });
+		layout.Children.Add(new Label
+		{
+			Text = $"{header.Format} · {header.Files.Count} file{(header.Files.Count == 1 ? "" : "s")} · {FormatSize(header.Files.Sum(f => f.Size))}",
+			FontSize = 13,
+		});
+
+		// Lock-method badge (white pill, colored text — same scheme as the vault rows).
+		string method = RecentBundleStore.BadgeMethodFor(bundleBytes);
+		layout.Children.Add(new Frame
+		{
+			Content = new Label { Text = method, TextColor = BadgeColorFor(method), FontAttributes = FontAttributes.Bold, FontSize = 13 },
+			BackgroundColor = Color.FromArgb("#FFFFFF"),
+			CornerRadius = 12,
+			Padding = new Thickness(10, 4),
+			HasShadow = false,
+			HorizontalOptions = LayoutOptions.Start,
+		});
+
+		layout.Children.Add(new Label { Text = DescribeUnlocks(header), FontSize = 13 });
+		if (header.Totp?.Required == true)
+			layout.Children.Add(new Label { Text = "Second factor (authenticator app) required.", FontSize = 13 });
+
+		if (header.Files.Count == 0)
+		{
+			layout.Children.Add(new Label { Text = "This bundle holds no files.", FontSize = 13 });
+		}
+		else
+		{
+			foreach (BundleFileEntry file in header.Files)
+			{
+				var row = new HorizontalStackLayout { Spacing = 8 };
+				row.Add(new Label { Text = file.Path, FontSize = 13, LineBreakMode = LineBreakMode.TailTruncation, HorizontalOptions = LayoutOptions.StartAndExpand });
+				row.Add(new Label { Text = FormatSize(file.Size), FontSize = 13, HorizontalOptions = LayoutOptions.End });
+				layout.Children.Add(row);
+			}
+		}
+
+		layout.Children.Add(new Label
+		{
+			Text = "Contents stay encrypted — open this bundle from Files to browse its files.",
+			FontSize = 12,
+			TextColor = Color.FromArgb("#a7a7a7"),
+		});
+
+		return new ScrollView { Content = layout, VerticalOptions = LayoutOptions.FillAndExpand };
+	}
+
+	/// <summary>
+	/// One line describing how the inner bundle unlocks, from its header
+	/// wraps: OR wraps (any one unlocks alone) and AND groups (all wraps
+	/// in a group are required together).
+	/// </summary>
+	private static string DescribeUnlocks(BundleHeader header)
+	{
+		var ors = new List<string>();
+		var ands = new Dictionary<string, List<string>>();
+		foreach (BundleWrap w in header.Wraps)
+		{
+			string label = WrapLabel(w.Type);
+			if (string.Equals(w.Mode, "and", StringComparison.OrdinalIgnoreCase) &&
+				!string.IsNullOrEmpty(w.Group))
+			{
+				if (!ands.TryGetValue(w.Group!, out var list))
+					ands[w.Group!] = list = new List<string>();
+				list.Add(label);
+			}
+			else
+			{
+				ors.Add(label);
+			}
+		}
+		var parts = new List<string>();
+		if (ors.Count == 1)
+			parts.Add($"Unlocks with: {ors[0]}.");
+		else if (ors.Count > 1)
+			parts.Add($"Unlocks with any one of: {string.Join(", ", ors)}.");
+		foreach (var kv in ands)
+			parts.Add($"Requires all of: {string.Join(" + ", kv.Value)}.");
+		return parts.Count > 0 ? string.Join(" ", parts) : "No unlock methods listed.";
+	}
+
+	private static string WrapLabel(string type) => type.ToLowerInvariant() switch
+	{
+		"passphrase" => "Passphrase",
+		"yubikey-hmac-sha1" => "YubiKey",
+		"passkey-prf" => "Passkey",
+		_ => type,
+	};
+
+	/// <summary>
+	/// Badge text color on the white pill, mirroring
+	/// <see cref="RecentBundle.BadgeColor"/>: red passphrase, blue
+	/// YubiKey, green passkey, purple for anything layered.
+	/// </summary>
+	private static Color BadgeColorFor(string method) => method switch
+	{
+		"Passphrase" => Color.FromArgb("#FF0000"),
+		"YubiKey" => Color.FromArgb("#0066FF"),
+		"Passkey" => Color.FromArgb("#00CC00"),
+		_ => Color.FromArgb("#AF00FF"),
+	};
+
+	private static string FormatSize(long bytes) =>
+		Math.Max(0, bytes) switch
+		{
+			< 1024 => $"{bytes} B",
+			< 1024 * 1024 => $"{bytes / 1024.0:0.#} KB",
+			< 1024L * 1024 * 1024 => $"{bytes / 1024.0 / 1024:0.#} MB",
+			_ => $"{bytes / 1024.0 / 1024 / 1024:0.#} GB",
+		};
 
 	private void OnDeleteFile(string path)
 	{

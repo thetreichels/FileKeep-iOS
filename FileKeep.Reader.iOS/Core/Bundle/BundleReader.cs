@@ -223,6 +223,26 @@ public sealed class BundleReader : IDisposable
 	}
 
 	/// <summary>
+	/// Peeks at the full bundle header without unlocking. The nested-bundle
+	/// preview uses this to show a .kfb file's innards (file list, sizes,
+	/// unlock methods) from the plaintext header. Returns false when the
+	/// header can't be read.
+	/// </summary>
+	public static bool TryPeekHeader(byte[] bundleBytes, out BundleHeader? header)
+	{
+		header = null;
+		try
+		{
+			header = ParseHeader(bundleBytes).Header;
+			return true;
+		}
+		catch (Exception ex) when (ex is InvalidDataException || ex is ArgumentException)
+		{
+			return false;
+		}
+	}
+
+	/// <summary>
 	/// Derives the KEK for a specific passphrase wrap. Used by the layered
 	/// unlock flow to get per-wrap KEKs for AND groups. The caller owns
 	/// the returned buffer and must zero it after use. The passphrase

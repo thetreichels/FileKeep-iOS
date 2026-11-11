@@ -59,7 +59,7 @@
 					</CollectionView.ItemTemplate>
 				</CollectionView>
 				<Label x:Name="VaultStatusLabel" Grid.Row="4" Style="{StaticResource StatusText}" />
-				<Label x:Name="VersionLabel" Grid.Row="5" Text="v0.0.12"
+				<Label x:Name="VersionLabel" Grid.Row="5" Text="v0.0.13"
 				       FontSize="10" TextColor="#666666"
 				       HorizontalOptions="Center" Margin="0,4,0,2" />
 			</Grid>
