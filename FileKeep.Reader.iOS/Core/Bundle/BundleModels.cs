@@ -28,8 +28,15 @@ public sealed class BundleHeader
 /// One way to unwrap the bundle's DEK. Each wrap independently yields
 /// the same 32-byte DEK. Types: "passphrase", "yubikey-hmac-sha1",
 /// "passkey-prf".
+/// Value equality: two wraps are the same unlock method when their
+/// identity fields match. The nonce/ciphertext (NonceB64/DataB64) are
+/// deliberately excluded — they are fresh randomness per creation, not
+/// identity. Equality is what lets <see cref="BundleReader.OpenWithAndShares"/>
+/// match a wrap from one header parse against the wraps of another parse
+/// of the same bundle; without it every AND unlock fails on reference
+/// equality ("Wrap is not from this bundle").
 /// </summary>
-public sealed class BundleWrap
+public sealed class BundleWrap : IEquatable<BundleWrap>
 {
 	[JsonPropertyName("type")]
 	public string Type { get; set; } = "";
@@ -88,6 +95,42 @@ public sealed class BundleWrap
 
 	[JsonPropertyName("data_b64")]
 	public string DataB64 { get; set; } = "";
+
+	public bool Equals(BundleWrap? other)
+	{
+		if (other is null)
+			return false;
+		if (ReferenceEquals(this, other))
+			return true;
+		return string.Equals(Type, other.Type, StringComparison.Ordinal)
+			&& string.Equals(Mode, other.Mode, StringComparison.Ordinal)
+			&& string.Equals(Group, other.Group, StringComparison.Ordinal)
+			&& string.Equals(SaltB64, other.SaltB64, StringComparison.Ordinal)
+			&& Iterations == other.Iterations
+			&& Slot == other.Slot
+			&& string.Equals(ChallengeB64, other.ChallengeB64, StringComparison.Ordinal)
+			&& string.Equals(PrfSaltB64, other.PrfSaltB64, StringComparison.Ordinal)
+			&& string.Equals(CredentialIdB64, other.CredentialIdB64, StringComparison.Ordinal)
+			&& string.Equals(RpId, other.RpId, StringComparison.Ordinal);
+	}
+
+	public override bool Equals(object? obj) => Equals(obj as BundleWrap);
+
+	public override int GetHashCode()
+	{
+		var hash = new HashCode();
+		hash.Add(Type, StringComparer.Ordinal);
+		hash.Add(Mode, StringComparer.Ordinal);
+		hash.Add(Group, StringComparer.Ordinal);
+		hash.Add(SaltB64, StringComparer.Ordinal);
+		hash.Add(Iterations);
+		hash.Add(Slot);
+		hash.Add(ChallengeB64, StringComparer.Ordinal);
+		hash.Add(PrfSaltB64, StringComparer.Ordinal);
+		hash.Add(CredentialIdB64, StringComparer.Ordinal);
+		hash.Add(RpId, StringComparer.Ordinal);
+		return hash.ToHashCode();
+	}
 }
 
 public sealed class BundleTotp
