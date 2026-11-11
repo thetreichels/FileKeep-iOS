@@ -6,17 +6,20 @@ namespace FileKeep.Reader.iOS;
 
 /// <summary>
 /// Browse SMB shares in-app ("Network places"): server entry +
-/// remembered servers → shares → folders → .kfb files only → tap a
-/// bundle to stream-download it to a temp file and hand the bytes
-/// back to MainPage, which opens them through the existing bundle
-/// open flow. Modal page (MainPage is not in a NavigationPage).
+/// remembered servers + subnet scan → shares → folders → .kfb files
+/// only → tap a bundle to stream-download it to a temp file and hand
+/// the bytes back to MainPage, which opens them through the existing
+/// bundle open flow. Modal page (MainPage is not in a NavigationPage).
 ///
-/// v1 scope: manual server entry + remembered servers; no Bonjour
-/// discovery. SMB bundles are editable: Save writes back through
-/// this same browser in save mode (NetworkPlacesPage.ForSave), which
-/// uploads the rebuilt encrypted bundle bytes to the picked share
-/// and folder. The password lives in the Keychain (SecureStorage),
-/// never in Preferences.
+/// Discovery is a subnet scan for TCP 445 (SmbDiscovery, ported from
+/// the desktop recovery wizard): no Bonjour, no WS-Discovery, no new
+/// entitlement. A found host fills the server field and connects the
+/// same way a remembered server does; shares then enumerate over the
+/// authenticated session (srvsvc) as before. SMB bundles are editable:
+/// Save writes back through this same browser in save mode
+/// (NetworkPlacesPage.ForSave), which uploads the rebuilt encrypted
+/// bundle bytes to the picked share and folder. The password lives in
+/// the Keychain (SecureStorage), never in Preferences.
 /// </summary>
 public partial class NetworkPlacesPage : ContentPage
 {
@@ -26,7 +29,12 @@ public partial class NetworkPlacesPage : ContentPage
 		public required bool IsDir { get; set; }
 		public required ulong Size { get; set; }
 		public required string IconData { get; set; }
-		public string SizeText => IsDir ? "Folder" : FormatSize(Size);
+		public string SizeText => IsHost
+			? (Name == HostAddress ? "SMB server" : HostAddress)
+			: IsDir ? "Folder" : FormatSize(Size);
+		/// <summary>True for a scanned host row (pre-connect): tapping it picks the server.</summary>
+		public bool IsHost { get; set; }
+		public string HostAddress { get; set; } = "";
 	}
 
 	private readonly TaskCompletionSource<(byte[] Bytes, string SmbUrl)?> _selection = new();
@@ -44,6 +52,7 @@ public partial class NetworkPlacesPage : ContentPage
 	private bool _gone;
 	private int _inFlight;
 	private CancellationTokenSource? _downloadCts;
+	private CancellationTokenSource? _scanCts;
 
 	/// <summary>
 	/// <paramref name="smbUrl"/> pre-fills the server (and the
@@ -99,6 +108,7 @@ public partial class NetworkPlacesPage : ContentPage
 		base.OnDisappearing();
 		_gone = true;
 		_downloadCts?.Cancel();
+		_scanCts?.Cancel();
 		_selection.TrySetResult(null);
 		_saveSelection.TrySetResult(null);
 		DisposeSessionIfGone();
@@ -123,9 +133,21 @@ public partial class NetworkPlacesPage : ContentPage
 		if (SavedServersPicker.SelectedItem is not SmbServerEntry entry)
 			return;
 		SavedServersPicker.SelectedItem = null;
-		ServerEntry.Text = entry.Server;
-		UsernameEntry.Text = entry.Username;
-		string? password = await SmbCredentials.GetPasswordAsync(entry.Server);
+		await PickServerAsync(entry.Server);
+	}
+
+	/// <summary>
+	/// Fill the server field from a saved or scanned server; when the
+	/// password is in the Keychain, connect straight away, otherwise
+	/// the user types the password and taps Connect.
+	/// </summary>
+	private async Task PickServerAsync(string server)
+	{
+		ServerEntry.Text = server;
+		string username = SmbCredentials.LoadServers()
+			.FirstOrDefault(s => string.Equals(s.Server, server, StringComparison.OrdinalIgnoreCase))?.Username ?? "";
+		UsernameEntry.Text = username;
+		string? password = await SmbCredentials.GetPasswordAsync(server);
 		if (password is null)
 		{
 			// No saved password: the user types it, then taps Connect.
@@ -134,7 +156,72 @@ public partial class NetworkPlacesPage : ContentPage
 			return;
 		}
 		PasswordEntry.Text = password;
-		await ConnectAsync(entry.Server, entry.Username, password);
+		await ConnectAsync(server, username, password);
+	}
+
+	/// <summary>
+	/// Scan the local subnet for SMB hosts and list them as rows: tap
+	/// one to pick that server. Progress runs in the status label;
+	/// the scan is cancellable.
+	/// </summary>
+	private async void OnScanClicked(object? sender, EventArgs e)
+	{
+		_scanCts?.Cancel();
+		var cts = new CancellationTokenSource();
+		_scanCts = cts;
+		ScanButton.IsEnabled = false;
+		CancelScanButton.IsVisible = true;
+		SetStatus("Scanning this network…", isError: false);
+		try
+		{
+			// Progress<T> was created on the UI thread, so Report
+			// marshals back to it.
+			var progress = new Progress<(int Done, int Total)>(p =>
+				SetStatus($"Scanning this network… {p.Done} of {p.Total}", isError: false));
+			IReadOnlyList<SmbDiscovery.DiscoveredHost> hosts =
+				await new SmbDiscovery().DiscoverAsync(progress, cts.Token);
+			if (_gone)
+				return;
+			if (hosts.Count == 0)
+			{
+				SetStatus("No SMB servers found on this network.", isError: false);
+				return;
+			}
+			PathLabel.Text = "Found on this network";
+			BackButton.IsVisible = _share is not null;
+			SaveHereButton.IsVisible = _saveMode && _share is not null;
+			BrowseView.ItemsSource = hosts.Select(h => new SmbBrowseItem
+			{
+				Name = h.HostName ?? h.HostAddress,
+				IsDir = false,
+				Size = 0,
+				IconData = RecentBundleStore.IconServerData,
+				IsHost = true,
+				HostAddress = h.HostAddress,
+			}).ToList();
+			SetStatus($"{hosts.Count} SMB server{(hosts.Count == 1 ? "" : "s")} found — tap one to connect.", isError: false);
+		}
+		catch (OperationCanceledException)
+		{
+			SetStatus("Scan cancelled.", isError: false);
+		}
+		catch (Exception ex)
+		{
+			SetStatus("Scan failed: " + ex.Message, isError: true);
+		}
+		finally
+		{
+			ScanButton.IsEnabled = true;
+			CancelScanButton.IsVisible = false;
+			cts.Dispose();
+			if (_scanCts == cts)
+				_scanCts = null;
+		}
+	}
+
+	private void OnCancelScanClicked(object? sender, EventArgs e)
+	{
+		_scanCts?.Cancel();
 	}
 
 	private async void OnConnectClicked(object? sender, EventArgs e)
@@ -281,6 +368,13 @@ public partial class NetworkPlacesPage : ContentPage
 		if (e.CurrentSelection.FirstOrDefault() is not SmbBrowseItem item)
 			return;
 		BrowseView.SelectedItem = null;
+		if (item.IsHost)
+		{
+			// Scanned host row: pick that server (connects the same
+			// way a remembered server does).
+			await PickServerAsync(item.HostAddress);
+			return;
+		}
 		if (_share is null)
 		{
 			// Listing shares: the row is a share name.

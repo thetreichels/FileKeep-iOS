@@ -34,6 +34,9 @@
 			       PlaceholderColor="{StaticResource TextSecondary}" />
 			<Button x:Name="ConnectButton" Text="Connect" Clicked="OnConnectClicked"
 			        BackgroundColor="{StaticResource BrandAccent}" TextColor="White" />
+			<Button x:Name="ScanButton" Text="Scan this network" Clicked="OnScanClicked"
+			        BackgroundColor="{StaticResource Surface}"
+			        TextColor="{StaticResource TextPrimary}" />
 			<Label x:Name="SavedServersLabel" Text="Saved servers" Style="{StaticResource StatusText}"
 			       IsVisible="False" />
 			<Picker x:Name="SavedServersPicker" IsVisible="False"
@@ -90,6 +93,10 @@
 			<Label x:Name="DownloadStatusLabel" IsVisible="False" Style="{StaticResource StatusText}" />
 			<Button x:Name="CancelDownloadButton" Text="Cancel download" IsVisible="False"
 			        Clicked="OnCancelDownloadClicked"
+			        BackgroundColor="{StaticResource Surface}"
+			        TextColor="{StaticResource TextPrimary}" />
+			<Button x:Name="CancelScanButton" Text="Cancel scan" IsVisible="False"
+			        Clicked="OnCancelScanClicked"
 			        BackgroundColor="{StaticResource Surface}"
 			        TextColor="{StaticResource TextPrimary}" />
 			<Label x:Name="StatusLabel" Style="{StaticResource StatusText}" />

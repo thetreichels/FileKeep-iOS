@@ -125,6 +125,7 @@ public static class RecentBundleStore
 	public const string IconLockData = "M 9.75,13 L 9.75,8.94 A 3.25,4.6 0 0 1 13,4.33 A 3.25,4.6 0 0 1 16.25,8.94 L 16.25,13 M 9.75,13 L 16.25,13 A 2.17,2.17 0 0 1 18.42,15.17 L 18.42,19.5 A 2.17,2.17 0 0 1 16.25,21.67 L 9.75,21.67 A 2.17,2.17 0 0 1 7.58,19.5 L 7.58,15.17 A 2.17,2.17 0 0 1 9.75,13 Z";
 	public const string IconPhotoData = "M 7,7 L 19,7 A 2,2 0 0 1 21,9 L 21,17 A 2,2 0 0 1 19,19 L 7,19 A 2,2 0 0 1 5,17 L 5,9 A 2,2 0 0 1 7,7 Z M 7,10.5 A 2,2 0 0 1 9,8.5 A 2,2 0 0 1 11,10.5 A 2,2 0 0 1 9,12.5 A 2,2 0 0 1 7,10.5 Z M 5,19 L 9.5,13.5 L 12,16 L 15,12.5 L 21,19";
 	public const string IconFolderData = "M 4,9 L 9,9 L 10.5,6 L 15.5,6 L 17,9 L 22,9 L 22,18 A 2,2 0 0 1 20,20 L 6,20 A 2,2 0 0 1 4,18 Z";
+	public const string IconServerData = "M 4,5 L 22,5 L 22,17 L 4,17 Z M 10,21 L 16,21 M 13,17 L 13,21";
 	public const string IconLayersData = "M 13,4.75 L 21,8.25 L 13,11.75 L 5,8.25 Z M 13,9.5 L 21,13.0 L 13,16.5 L 5,13.0 Z M 13,14.25 L 21,17.75 L 13,21.25 L 5,17.75 Z";
 
 	/// <summary>
