@@ -138,7 +138,7 @@ public sealed class SmbDiscovery
 		{
 			using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(1));
 			using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeout.Token);
-			var entry = await Dns.GetHostEntryAsync(ip, linked.Token);
+			var entry = await Dns.GetHostEntryAsync(ip.ToString(), linked.Token);
 			string name = entry.HostName;
 			int dot = name.IndexOf('.');
 			return dot > 0 ? name[..dot] : name;
