@@ -105,7 +105,7 @@ public static class BundleOpener
 		}
 
 		var url = Foundation.NSUrl.FromFilename(tempPath);
-		var picker = new UIDocumentPickerViewController(url, UIDocumentPickerMode.Export);
+		var picker = new UIDocumentPickerViewController(url, UIDocumentPickerMode.ExportToService);
 		_activeDelegate = new ExportDelegate(tcs, () => _activeDelegate = null, tempPath, bundleBytes.Length);
 		picker.Delegate = _activeDelegate;
 		presenter.PresentViewController(picker, true, null);
